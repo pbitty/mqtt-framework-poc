@@ -1,0 +1,9 @@
+services:
+  mosquito:
+    image: eclipse-mosquitto:2.1.2-alpine
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    ports:
+      - 1883:1883
