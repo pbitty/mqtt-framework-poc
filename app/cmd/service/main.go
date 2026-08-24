@@ -49,7 +49,7 @@ func EntryPoint(cfg Config, conn *autopaho.ConnectionManager, logger *slog.Logge
 
 	subAck, err := conn.Subscribe(context.Background(), &paho.Subscribe{
 		Subscriptions: []paho.SubscribeOptions{
-			paho.SubscribeOptions{
+			{
 				Topic:             topic,
 				QoS:               0,
 				RetainHandling:    0,

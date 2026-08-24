@@ -1,7 +1,7 @@
 version: "3"
 
 vars:
-  app_name: server-app
+  app_name: device
   ssh_host: tomato
   app_executable: "{{.TASKFILE_DIR}}/build/{{.app_name}}"
   broker_url: mqtt://192.168.1.195:1883
@@ -9,9 +9,9 @@ vars:
 tasks:
   build:
     cmds:
-      - cd "{{.app_name}}" && GOOS=linux GOARCH=arm64 go build -o "{{.app_executable}}" .
+      - cd app && GOOS=linux GOARCH=arm64 go build -o "{{.app_executable}}" "./cmd/{{.app_name}}"
     sources:
-      - "{{.app_name}}/**"
+      - "app/**"
     generates:
       - "{{.app_executable}}"
 
@@ -26,3 +26,7 @@ tasks:
     deps: [deploy]
     cmds:
       - ssh "{{.ssh_host}}" GODEBUG=netdns=go BROKER_URL={{.broker_url}} "./{{.app_name}}"
+
+  run-service:
+    cmds:
+      - cd app && go run ./cmd/service
