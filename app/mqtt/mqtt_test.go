@@ -91,6 +91,76 @@ func TestGetSubscribeFilter(t *testing.T) {
 	assert.Equal(t, "FieldA/ValueA/FieldB/+/FieldC/+/msg", def.GetSubscribeFilter())
 }
 
+func TestTopicMatches(t *testing.T) {
+	type Ns struct {
+		A string
+		B string
+		C string
+	}
+
+	type Msg struct {
+		Value string
+	}
+
+	tcs := []struct {
+		left, right TopicDef[Ns, Msg]
+		matches     bool
+	}{
+		{
+			left:    TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: "c"}},
+			right:   TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: "c"}},
+			matches: true,
+		},
+		{
+			left:    TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: "c"}},
+			right:   TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: "another_value"}},
+			matches: false,
+		},
+		{
+			left:    TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: "c"}},
+			right:   TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "another_value", C: "c"}},
+			matches: false,
+		},
+		{
+			left:    TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "", C: "c"}},
+			right:   TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: "c"}},
+			matches: true,
+		},
+		{
+			left:    TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "", C: "c"}},
+			right:   TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "anything_goes", C: "c"}},
+			matches: true,
+		},
+		{
+			left:    TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "", C: "c"}},
+			right:   TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: "another_value"}},
+			matches: false,
+		},
+		{
+			left:    TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: ""}},
+			right:   TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: "c"}},
+			matches: true,
+		},
+		{
+			left:    TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: ""}},
+			right:   TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: "anything_goes"}},
+			matches: true,
+		},
+		{
+			left:    TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: ""}},
+			right:   TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "another_value", C: "c"}},
+			matches: false,
+		},
+	}
+
+	for i, tc := range tcs {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			matches := tc.left.Matches(tc.right.GetPublishTopic())
+			assert.Equal(t, tc.matches, matches)
+		})
+	}
+}
+
 type RouterTestSuite struct {
 	suite.Suite
 	cm *autopaho.ConnectionManager

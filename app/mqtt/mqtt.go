@@ -20,7 +20,31 @@ func (t TopicDef[P, M]) GetSubscribeFilter() string {
 	return t.generateTopicPath(true)
 }
 
-func (t TopicDef[P, M]) generateTopicPath(emptyValuesAreWildcards bool) string {
+func (t TopicDef[N, M]) Matches(topic string) bool {
+	partsA := t.generateTopicSegments(true)
+	partsB := strings.Split(topic, "/")
+
+	if len(partsA) != len(partsB) {
+		return false
+	}
+
+	for i := 0; i < len(partsA); i++ {
+		a := partsA[i]
+		b := partsB[i]
+
+		if a != "+" && a != b {
+			return false
+		}
+	}
+	return true
+}
+
+func (t TopicDef[P, M]) generateTopicPath(emptyValuesAsWildcards bool) string {
+	parts := t.generateTopicSegments(emptyValuesAsWildcards)
+	return strings.Join(parts, "/")
+}
+
+func (t TopicDef[N, M]) generateTopicSegments(emptyValuesAsWildcards bool) []string {
 	ns := reflect.ValueOf(t.Namespace)
 	if ns.Kind() != reflect.Struct {
 		panic(fmt.Sprintf("Namespace must be a struct, found %s", ns))
