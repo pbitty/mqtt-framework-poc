@@ -1,2 +1,4 @@
 /mosquitto/log/
 /mosquitto/data/
+/build/
+.task/

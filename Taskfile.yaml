@@ -1,0 +1,30 @@
+version: "3"
+
+vars:
+  app_name: device-app
+  ssh_host: tomato
+  app_executable: "{{.TASKFILE_DIR}}/build/{{.app_name}}"
+
+tasks:
+  build:
+    cmds:
+      - cd "{{.app_name}}" && go build -o "{{.app_executable}}" .
+    sources:
+      - "{{.app_name}}/**"
+    generates:
+      - "{{.app_executable}}"
+    env:
+      GOOS: linux
+      GOARCH: arm64
+
+  deploy:
+    deps: [build]
+    sources:
+      - "{{.app_executable}}"
+    cmds:
+      - scp "{{.app_executable}}" "{{.ssh_host}}:~/"
+
+  run:
+    deps: [deploy]
+    cmds:
+      - ssh "{{.ssh_host}}" "./{{.app_name}}"
