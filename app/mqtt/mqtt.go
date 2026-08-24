@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+
+	"github.com/eclipse/paho.golang/autopaho"
 )
 
 type TopicDef[N any, M any] struct {
@@ -67,14 +69,23 @@ func (p *PublishHandle[M]) Publish(m M) error {
 }
 
 type Router struct {
+	cm   *autopaho.ConnectionManager
+	subs map[string]Subscription[any]
 }
 
-func (r *Router) GetSubscription[N, M any](t TopicDef[N, M]) Subscription[M] {
+func NewRouter(cm *autopaho.ConnectionManager) *Router {
+	return &Router{
+		cm:   cm,
+		subs: make(map[string]Subscription[any]),
+	}
+}
+
+func (r *Router) GetSubscription[N, M any](t TopicDef[N, M]) (Subscription[M], error) {
 	var s Subscription[M]
-	return s
+	return s, nil
 }
 
-func (r *Router) GetPublishHandle[N, M any](t TopicDef[N, M]) PublishHandle[M] {
+func (r *Router) GetPublishHandle[N, M any](t TopicDef[N, M]) (PublishHandle[M], error) {
 	var p PublishHandle[M]
-	return p
+	return p, nil
 }
