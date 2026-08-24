@@ -1,11 +1,13 @@
-package mqtt
+package mqtt_test
 
 import (
+	"app/mqtt"
+	"log/slog"
 	"math/rand/v2"
 	"net/url"
 	"os"
-	"runtime"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,154 +18,10 @@ import (
 	"github.com/stretchr/testify/suite"
 )
 
-// TestThatItCompiles does not make any assertions
-// but it uses the types and methods to ensure that the type constraints work
-func TestThatItCompiles(*testing.T) {
-	type DeviceNamespace struct {
-		Building string
-		Sector   string
-		DeviceID string
-	}
-
-	type Temperature struct {
-		Value float64
-	}
-
-	type DeviceTemperatureTopic = TopicDef[DeviceNamespace, Temperature]
-
-	t := DeviceTemperatureTopic{
-		DeviceNamespace{
-			Building: "BuildingA",
-			Sector:   "SectorA",
-			DeviceID: "DeviceFoo",
-		},
-	}
-
-	r := Router{}
-
-	sub, _ := r.GetSubscription(t)
-
-	var m Temperature
-	m, _ = sub.GetMessage()
-	runtime.KeepAlive(m)
-
-	ph, _ := r.GetPublishHandle(t)
-	ph.Publish(Temperature{Value: 5.0})
-}
-
-func TestGetPublishTopic(t *testing.T) {
-	type ns struct {
-		FieldA string
-		FieldB string
-		FieldC string
-	}
-
-	type msg struct{}
-
-	def := TopicDef[ns, msg]{
-		Namespace: ns{
-			FieldA: "ValueA",
-			FieldB: "ValueB",
-			FieldC: "ValueC",
-		},
-	}
-
-	assert.Equal(t, "FieldA/ValueA/FieldB/ValueB/FieldC/ValueC/msg", def.GetPublishTopic())
-}
-
-func TestGetSubscribeFilter(t *testing.T) {
-	type ns struct {
-		FieldA string
-		FieldB string
-		FieldC string
-	}
-
-	type msg struct{}
-
-	def := TopicDef[ns, msg]{
-		Namespace: ns{
-			FieldA: "ValueA",
-			FieldB: "",
-			FieldC: "",
-		},
-	}
-
-	assert.Equal(t, "FieldA/ValueA/FieldB/+/FieldC/+/msg", def.GetSubscribeFilter())
-}
-
-func TestTopicMatches(t *testing.T) {
-	type Ns struct {
-		A string
-		B string
-		C string
-	}
-
-	type Msg struct {
-		Value string
-	}
-
-	tcs := []struct {
-		left, right TopicDef[Ns, Msg]
-		matches     bool
-	}{
-		{
-			left:    TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: "c"}},
-			right:   TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: "c"}},
-			matches: true,
-		},
-		{
-			left:    TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: "c"}},
-			right:   TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: "another_value"}},
-			matches: false,
-		},
-		{
-			left:    TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: "c"}},
-			right:   TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "another_value", C: "c"}},
-			matches: false,
-		},
-		{
-			left:    TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "", C: "c"}},
-			right:   TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: "c"}},
-			matches: true,
-		},
-		{
-			left:    TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "", C: "c"}},
-			right:   TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "anything_goes", C: "c"}},
-			matches: true,
-		},
-		{
-			left:    TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "", C: "c"}},
-			right:   TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: "another_value"}},
-			matches: false,
-		},
-		{
-			left:    TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: ""}},
-			right:   TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: "c"}},
-			matches: true,
-		},
-		{
-			left:    TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: ""}},
-			right:   TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: "anything_goes"}},
-			matches: true,
-		},
-		{
-			left:    TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "b", C: ""}},
-			right:   TopicDef[Ns, Msg]{Namespace: Ns{A: "a", B: "another_value", C: "c"}},
-			matches: false,
-		},
-	}
-
-	for i, tc := range tcs {
-		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			matches := tc.left.Matches(tc.right.GetPublishTopic())
-			assert.Equal(t, tc.matches, matches)
-		})
-	}
-}
-
 type RouterTestSuite struct {
 	suite.Suite
-	cm *autopaho.ConnectionManager
+	cm     *autopaho.ConnectionManager
+	logger *slog.Logger
 }
 
 var _ suite.SetupTestSuite = (*RouterTestSuite)(nil)
@@ -175,6 +33,11 @@ func TestRouterTestSuite(t *testing.T) {
 }
 
 func (ts *RouterTestSuite) SetupTest() {
+	logger := slog.New(slog.NewTextHandler(ts.T().Output(), &slog.HandlerOptions{
+		AddSource: true,
+		Level:     slog.LevelDebug,
+	}))
+
 	clientId := ts.T().Name() +
 		"-" + time.Now().Format("20060102150405") +
 		"-" + strconv.Itoa(rand.Int())
@@ -201,6 +64,10 @@ func (ts *RouterTestSuite) SetupTest() {
 			Session:            state.NewInMemory(),
 			OnServerDisconnect: func(d *paho.Disconnect) { ts.T().Log("server_disconnect: ", d.Properties.ReasonString) },
 			OnClientError:      func(err error) { ts.T().Log("client_error", err) },
+			OnPublishReceived: []func(pr paho.PublishReceived) (bool, error){func(pr paho.PublishReceived) (bool, error) {
+				logger.Debug("publish_received", "packet", pr.Packet)
+				return false, nil
+			}},
 		},
 	})
 	ts.Require().NoError(err, "error creating ConnectionManager")
@@ -209,9 +76,73 @@ func (ts *RouterTestSuite) SetupTest() {
 	ts.Require().NoError(err, "error starting connection to MQTT broker")
 
 	ts.cm = cm
+	ts.logger = logger
 }
 
-func (ts *RouterTestSuite) TestBasic() {
-	r := NewRouter(ts.cm)
-	ts.Require().NotNil(r)
+func (ts *RouterTestSuite) TestPublishAndSubscribe() {
+	type Namespace struct {
+		Section    string
+		SubSection string
+		DeviceId   string
+	}
+
+	type Message struct {
+		Value string
+	}
+
+	type result struct {
+		n Namespace
+		m Message
+	}
+
+	var (
+		ctx = ts.T().Context()
+		r   = mqtt.NewRouter(ts.cm, ts.logger)
+
+		t1 = mqtt.NewTopicDef(Namespace{Section: "A", SubSection: "B", DeviceId: "device-1"}, Message{})
+		t2 = t1.WithNamespace(Namespace{Section: "A"})
+		t3 = t1.WithNamespace(Namespace{SubSection: "B"})
+
+		result1 atomic.Value
+		result2 atomic.Value
+		result3 atomic.Value
+
+		timeout = 5 * time.Second
+		tick    = 100 * time.Millisecond
+	)
+
+	r.GetSubscription(ctx, t1, func(n Namespace, m Message) { result1.Store(result{n, m}) })
+	r.GetSubscription(ctx, t2, func(n Namespace, m Message) { result2.Store(result{n, m}) })
+	r.GetSubscription(ctx, t3, func(n Namespace, m Message) { result3.Store(result{n, m}) })
+
+	r.GetPublishHandle(t1).Publish(ctx, Message{Value: "hello world!"})
+
+	ts.Assert().EventuallyWithT(func(collect *assert.CollectT) {
+		assert.Equal(collect,
+			result{
+				Namespace{Section: "A", SubSection: "B", DeviceId: "device-1"},
+				Message{"hello world!"},
+			},
+			result1.Load(),
+			"no message received on namespace %+v", t1.Namespace(),
+		)
+
+		assert.Equal(collect,
+			result{
+				Namespace{Section: "A", SubSection: "B", DeviceId: "device-1"},
+				Message{"hello world!"},
+			},
+			result2.Load(),
+			"no message received on namespace %+v", t2.Namespace(),
+		)
+
+		assert.Equal(collect,
+			result{
+				Namespace{Section: "A", SubSection: "B", DeviceId: "device-1"},
+				Message{"hello world!"},
+			},
+			result3.Load(),
+			"no message received on namespace %+v", t3.Namespace(),
+		)
+	}, timeout, tick)
 }
