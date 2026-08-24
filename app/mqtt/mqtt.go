@@ -26,7 +26,7 @@ func (t TopicDef[P, M]) generateTopicPath(emptyValuesAreWildcards bool) string {
 		panic(fmt.Sprintf("Namespace must be a struct, found %s", ns))
 	}
 
-	// K/V pairs Namespace fields, plus the name of M
+	// K/V pairs of Namespace fields, plus the name of M
 	parts := make([]string, ns.NumField()*2+1)
 
 	idx := 0
