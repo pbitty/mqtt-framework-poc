@@ -11,22 +11,23 @@ import (
 	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/eclipse/paho.golang/paho/session/state"
+	"github.com/kelseyhightower/envconfig"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
 )
 
 type Config struct {
-	ClientID string
-	Url      string
-	Topic    string
+	ClientID  string `envconfig:"CLIENT_ID"   default:"my-client-id"`
+	BrokerUrl string `envconfig:"BROKER_URL"  default:"mqtt://127.0.0.1:1883"`
+	Topic     string `envconfig:"TOPIC"       default:"/my-topic/#"`
 }
 
-func NewConfig() Config {
-	return Config{
-		ClientID: "my-client-id",
-		Url:      "mqtt://127.0.0.1:1883",
-		Topic:    "/#",
+func NewConfig() (Config, error) {
+	var c Config
+	if err := envconfig.Process("", &c); err != nil {
+		return Config{}, fmt.Errorf("reading config from env: %w", err)
 	}
+	return c, nil
 }
 
 func main() {
@@ -40,7 +41,11 @@ func main() {
 }
 
 func EntryPoint(cfg Config, conn *autopaho.ConnectionManager, logger *slog.Logger) error {
+	logger.Info("config", "config", cfg)
+
 	topic := cfg.Topic
+
+	logger.Info("subscribing", "topic", topic)
 
 	subAck, err := conn.Subscribe(context.Background(), &paho.Subscribe{
 		Subscriptions: []paho.SubscribeOptions{
@@ -70,7 +75,7 @@ func EntryPoint(cfg Config, conn *autopaho.ConnectionManager, logger *slog.Logge
 }
 
 func NewMqttClient(cfg Config, logger *slog.Logger) (*autopaho.ConnectionManager, error) {
-	u, err := url.Parse(cfg.Url)
+	u, err := url.Parse(cfg.BrokerUrl)
 	if err != nil {
 		return nil, fmt.Errorf("parsing URL: %w", err)
 	}
