@@ -13,14 +13,39 @@ import (
 	"github.com/eclipse/paho.golang/paho"
 )
 
-type TopicDef[N any, M any] struct {
-	namespace N
-}
-
-func NewTopicDef[N any, M any](namespace N, msgType M) TopicDef[N, M] {
-	validateTypes[N, M]()
-	// TODO Validate types early and panic
-	return TopicDef[N, M]{namespace: namespace}
+// TopicDef represents typed a Message that can be sent/received under a Namespace.
+//
+// Namespace must be a struct type with only string fields.  Field names and values
+// are used to generate the topic name, in the order the fields are defined in the struct.
+//
+// Message must be a struct type and all fields must be Marshalable by the Router's marshaler.
+// Currently only JSON is supported.
+//
+// A typical usage defines the namespace and message types, defines the topic using a type alias,
+// and then uses [TopicDef.WithNamespace] to create an instance of the topic for subscribing to
+// or publishing messages
+//
+// Example:
+//
+//	type MyNamespace struct {
+//		FirstField  string
+//		SecondField string
+//		ThirdField  string
+//	}
+//
+//	type MyMessage struct {
+//		Value string
+//	}
+//
+//	type MyTopic = mqtt.TopicDef[MyNamespace, MyMessage]
+//
+//	t := MyTopic{}.WithNamespace(MyNamespace{FirstField: "A", SecondField: "B", ThirdField: "C"})
+//
+//	ph := router.GetPublishHandle(t)
+//
+//	ph.Publish(ctx, Message{Value: "hello"})
+type TopicDef[Namespace any, Message any] struct {
+	namespace Namespace
 }
 
 func (t TopicDef[N, M]) Namespace() N {
@@ -28,7 +53,12 @@ func (t TopicDef[N, M]) Namespace() N {
 }
 
 func (t TopicDef[N, M]) WithNamespace(n N) TopicDef[N, M] {
+	validateTypes[N, M]()
 	return TopicDef[N, M]{namespace: n}
+}
+
+func (t TopicDef[Namespace, Message]) String() string {
+	return "TopicDef:" + t.getPublishTopic()
 }
 
 func (t TopicDef[P, M]) getPublishTopic() string {

@@ -7,84 +7,88 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestGetPublishTopic(t *testing.T) {
-	type ns struct {
+type (
+	TestNs struct {
 		FieldA string
 		FieldB string
 		FieldC string
 	}
 
-	type msg struct{}
-
-	def := NewTopicDef(ns{
-		FieldA: "ValueA",
-		FieldB: "ValueB",
-		FieldC: "ValueC",
-	},
-		msg{},
-	)
-
-	assert.Equal(t, "FieldA/ValueA/FieldB/ValueB/FieldC/ValueC/msg", def.getPublishTopic())
-}
-
-func TestTopicMatches(t *testing.T) {
-	type Ns struct {
-		A string
-		B string
-		C string
-	}
-
-	type Msg struct {
+	TestMsg struct {
 		Value string
 	}
 
+	TestTopic = TopicDef[TestNs, TestMsg]
+)
+
+func TestGetPublishTopic(t *testing.T) {
+	def := TestTopic{}.WithNamespace(TestNs{
+		FieldA: "ValueA",
+		FieldB: "ValueB",
+		FieldC: "ValueC",
+	})
+
+	assert.Equal(t, "FieldA/ValueA/FieldB/ValueB/FieldC/ValueC/TestMsg", def.getPublishTopic())
+}
+
+func TestGetSubscribeTopic(t *testing.T) {
+	def := TestTopic{}.WithNamespace(TestNs{
+		FieldA: "ValueA",
+		FieldB: "",
+		FieldC: "",
+	})
+
+	assert.Equal(t, "FieldA/ValueA/FieldB/+/FieldC/+/TestMsg", def.getSubscribeTopic())
+}
+
+func TestTopicMatches(t *testing.T) {
 	tcs := []struct {
-		left, right TopicDef[Ns, Msg]
+		left, right TopicDef[TestNs, TestMsg]
 		matches     bool
 	}{
 		{
-			left:    NewTopicDef(Ns{A: "a", B: "b", C: "c"}, Msg{}),
-			right:   NewTopicDef(Ns{A: "a", B: "b", C: "c"}, Msg{}),
+			left:    TestTopic{}.WithNamespace(TestNs{FieldA: "a", FieldB: "b", FieldC: "c"}),
+			right:   TestTopic{}.WithNamespace(TestNs{FieldA: "a", FieldB: "b", FieldC: "c"}),
 			matches: true,
 		},
 		{
-			left:    NewTopicDef(Ns{A: "a", B: "b", C: "c"}, Msg{}),
-			right:   NewTopicDef(Ns{A: "a", B: "b", C: "another_value"}, Msg{}),
+			left:    TestTopic{}.WithNamespace(TestNs{FieldA: "a", FieldB: "b", FieldC: "c"}),
+			right:   TestTopic{}.WithNamespace(TestNs{FieldA: "a", FieldB: "b", FieldC: "another_value"}),
 			matches: false,
 		},
 		{
-			left:    NewTopicDef(Ns{A: "a", B: "b", C: "c"}, Msg{}),
-			right:   NewTopicDef(Ns{A: "a", B: "another_value", C: "c"}, Msg{}),
+			left:    TestTopic{}.WithNamespace(TestNs{FieldA: "a", FieldB: "b", FieldC: "c"}),
+			right:   TestTopic{}.WithNamespace(TestNs{FieldA: "a", FieldB: "another_value", FieldC: "c"}),
 			matches: false,
 		},
 		{
-			left:    NewTopicDef(Ns{A: "a", B: "", C: "c"}, Msg{}),
-			right:   NewTopicDef(Ns{A: "a", B: "b", C: "c"}, Msg{}),
+			left:    TestTopic{}.WithNamespace(TestNs{FieldA: "a", FieldB: "", FieldC: "c"}),
+			right:   TestTopic{}.WithNamespace(TestNs{FieldA: "a", FieldB: "b", FieldC: "c"}),
 			matches: true,
 		},
 		{
-			left:    NewTopicDef(Ns{A: "a", B: "", C: "c"}, Msg{}),
-			right:   NewTopicDef(Ns{A: "a", B: "anything_goes", C: "c"}, Msg{}),
+			left:    TestTopic{}.WithNamespace(TestNs{FieldA: "a", FieldB: "", FieldC: "c"}),
+			right:   TestTopic{}.WithNamespace(TestNs{FieldA: "a", FieldB: "anything_goes", FieldC: "c"}),
 			matches: true,
 		},
 		{
-			left:    NewTopicDef(Ns{A: "a", B: "", C: "c"}, Msg{}),
-			right:   NewTopicDef(Ns{A: "a", B: "b", C: "another_value"}, Msg{}),
+			left:    TestTopic{}.WithNamespace(TestNs{FieldA: "a", FieldB: "", FieldC: "c"}),
+			right:   TestTopic{}.WithNamespace(TestNs{FieldA: "a", FieldB: "b", FieldC: "another_value"}),
 			matches: false,
 		},
 		{
-			left:    NewTopicDef(Ns{A: "a", B: "b", C: ""}, Msg{}),
-			right:   NewTopicDef(Ns{A: "a", B: "b", C: "c"}, Msg{}),
+			left:    TestTopic{}.WithNamespace(TestNs{FieldA: "a", FieldB: "b", FieldC: ""}),
+			right:   TestTopic{}.WithNamespace(TestNs{FieldA: "a", FieldB: "b", FieldC: "c"}),
 			matches: true,
 		},
 		{
-			left:    NewTopicDef(Ns{A: "a", B: "b", C: ""}, Msg{}),
-			right:   NewTopicDef(Ns{A: "a", B: "b", C: "anything_goes"}, Msg{}),
+			left:    TestTopic{}.WithNamespace(TestNs{FieldA: "a", FieldB: "b", FieldC: ""}),
+			right:   TestTopic{}.WithNamespace(TestNs{FieldA: "a", FieldB: "b", FieldC: "anything_goes"}),
 			matches: true,
 		},
 		{
-			left:    NewTopicDef(Ns{A: "a", B: "b", C: ""}, Msg{}),
-			right:   NewTopicDef(Ns{A: "a", B: "another_value", C: "c"}, Msg{}),
+			left:    TestTopic{}.WithNamespace(TestNs{FieldA: "a", FieldB: "b", FieldC: ""}),
+			right:   TestTopic{}.WithNamespace(TestNs{FieldA: "a", FieldB: "another_value", FieldC: "c"}),
 			matches: false,
 		},
 	}
@@ -95,25 +99,4 @@ func TestTopicMatches(t *testing.T) {
 			assert.Equal(t, tc.matches, matches)
 		})
 	}
-}
-
-func TestGetSubscribeTopic(t *testing.T) {
-	type Ns struct {
-		FieldA string
-		FieldB string
-		FieldC string
-	}
-
-	type Msg struct{}
-
-	def := NewTopicDef(
-		Ns{
-			FieldA: "ValueA",
-			FieldB: "",
-			FieldC: "",
-		},
-		Msg{},
-	)
-
-	assert.Equal(t, "FieldA/ValueA/FieldB/+/FieldC/+/msg", def.getSubscribeTopic())
 }

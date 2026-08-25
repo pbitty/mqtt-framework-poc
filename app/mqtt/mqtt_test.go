@@ -2,6 +2,7 @@ package mqtt_test
 
 import (
 	"app/mqtt"
+	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"net/url"
@@ -80,28 +81,30 @@ func (ts *RouterTestSuite) SetupTest() {
 }
 
 func (ts *RouterTestSuite) TestPublishAndSubscribe() {
-	type Namespace struct {
+	type MyNamespace struct {
 		Section    string
 		SubSection string
 		DeviceId   string
 	}
 
-	type Message struct {
+	type MyMessage struct {
 		Value string
 	}
 
+	type MyTopic = mqtt.TopicDef[MyNamespace, MyMessage]
+
 	type result struct {
-		n Namespace
-		m Message
+		n MyNamespace
+		m MyMessage
 	}
 
 	var (
 		ctx = ts.T().Context()
 		r   = mqtt.NewRouter(ts.cm, ts.logger)
 
-		t1 = mqtt.NewTopicDef(Namespace{Section: "A", SubSection: "B", DeviceId: "device-1"}, Message{})
-		t2 = t1.WithNamespace(Namespace{Section: "A"})
-		t3 = t1.WithNamespace(Namespace{SubSection: "B"})
+		t1 = MyTopic{}.WithNamespace(MyNamespace{Section: "A", SubSection: "B", DeviceId: "device-1"})
+		t2 = MyTopic{}.WithNamespace(MyNamespace{Section: "A"})
+		t3 = MyTopic{}.WithNamespace(MyNamespace{SubSection: "B"})
 
 		result1 atomic.Value
 		result2 atomic.Value
@@ -111,17 +114,17 @@ func (ts *RouterTestSuite) TestPublishAndSubscribe() {
 		tick    = 100 * time.Millisecond
 	)
 
-	r.GetSubscription(ctx, t1, func(n Namespace, m Message) { result1.Store(result{n, m}) })
-	r.GetSubscription(ctx, t2, func(n Namespace, m Message) { result2.Store(result{n, m}) })
-	r.GetSubscription(ctx, t3, func(n Namespace, m Message) { result3.Store(result{n, m}) })
+	r.GetSubscription(ctx, t1, func(n MyNamespace, m MyMessage) { result1.Store(result{n, m}) })
+	r.GetSubscription(ctx, t2, func(n MyNamespace, m MyMessage) { result2.Store(result{n, m}) })
+	r.GetSubscription(ctx, t3, func(n MyNamespace, m MyMessage) { result3.Store(result{n, m}) })
 
-	r.GetPublishHandle(t1).Publish(ctx, Message{Value: "hello world!"})
+	r.GetPublishHandle(t1).Publish(ctx, MyMessage{Value: "hello world!"})
 
 	ts.Assert().EventuallyWithT(func(collect *assert.CollectT) {
 		assert.Equal(collect,
 			result{
-				Namespace{Section: "A", SubSection: "B", DeviceId: "device-1"},
-				Message{"hello world!"},
+				MyNamespace{Section: "A", SubSection: "B", DeviceId: "device-1"},
+				MyMessage{"hello world!"},
 			},
 			result1.Load(),
 			"no message received on namespace %+v", t1.Namespace(),
@@ -129,8 +132,8 @@ func (ts *RouterTestSuite) TestPublishAndSubscribe() {
 
 		assert.Equal(collect,
 			result{
-				Namespace{Section: "A", SubSection: "B", DeviceId: "device-1"},
-				Message{"hello world!"},
+				MyNamespace{Section: "A", SubSection: "B", DeviceId: "device-1"},
+				MyMessage{"hello world!"},
 			},
 			result2.Load(),
 			"no message received on namespace %+v", t2.Namespace(),
@@ -138,11 +141,29 @@ func (ts *RouterTestSuite) TestPublishAndSubscribe() {
 
 		assert.Equal(collect,
 			result{
-				Namespace{Section: "A", SubSection: "B", DeviceId: "device-1"},
-				Message{"hello world!"},
+				MyNamespace{Section: "A", SubSection: "B", DeviceId: "device-1"},
+				MyMessage{"hello world!"},
 			},
 			result3.Load(),
 			"no message received on namespace %+v", t3.Namespace(),
 		)
 	}, timeout, tick)
+}
+
+func ExampleTopicDef() {
+	type Namespace struct {
+		FirstField  string
+		SecondField string
+		ThirdField  string
+	}
+	type Message struct {
+		Value1 string
+		Value2 float64
+	}
+
+	type Topic = mqtt.TopicDef[Namespace, Message]
+
+	td := Topic{}.WithNamespace(Namespace{FirstField: "first", SecondField: "second", ThirdField: "third"})
+	fmt.Printf("%+v", td)
+	// Output: TopicDef:FirstField/first/SecondField/second/ThirdField/third/Message
 }
