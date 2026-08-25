@@ -1,7 +1,6 @@
-package mqtt_test
+package router_test
 
 import (
-	"app/mqtt"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
@@ -11,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"app/router"
 
 	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
@@ -91,7 +92,7 @@ func (ts *RouterTestSuite) TestPublishAndSubscribe() {
 		Value string
 	}
 
-	type MyTopic = mqtt.TopicDef[MyNamespace, MyMessage]
+	type MyTopic = router.TopicDef[MyNamespace, MyMessage]
 
 	type result struct {
 		n MyNamespace
@@ -100,7 +101,7 @@ func (ts *RouterTestSuite) TestPublishAndSubscribe() {
 
 	var (
 		ctx = ts.T().Context()
-		r   = mqtt.NewRouter(ts.cm, ts.logger)
+		r   = router.NewRouter(ts.cm, ts.logger)
 
 		t1 = MyTopic{}.WithNamespace(MyNamespace{Section: "A", SubSection: "B", DeviceId: "device-1"})
 		t2 = MyTopic{}.WithNamespace(MyNamespace{Section: "A"})
@@ -161,7 +162,7 @@ func ExampleTopicDef() {
 		Value2 float64
 	}
 
-	type Topic = mqtt.TopicDef[Namespace, Message]
+	type Topic = router.TopicDef[Namespace, Message]
 
 	td := Topic{}.WithNamespace(Namespace{FirstField: "first", SecondField: "second", ThirdField: "third"})
 	fmt.Printf("%+v", td)
