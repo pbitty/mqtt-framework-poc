@@ -45,7 +45,7 @@ dev := Device{Region: "A", Zone: "B", ID: "1234"}
 topic := TemperatureTopic{}.WithNamespace(dev)
 // Get a publish handle that can be re-used.
 h := router.GetPublishHandle(topic)
-// Publish a message - the handle is typed using generics and will only accept `TemperatureMessage` as a parameter
+// Publish a message - the handle is typed based on the topic and will only accept `TemperatureMessage` as a parameter
 h.Publish(ctx, TemperatureMessage{TemperatureCelcius: 23.0})
 
 
