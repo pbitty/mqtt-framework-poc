@@ -1,6 +1,6 @@
 # mqtt-framework-poc
 
-This is a toy project to do hands-on learn on IoT programming.  Currently with a focus on the MQTT protocol.
+This is a PoC project to do hands-on learn on IoT programming.  Currently with a focus on the MQTT protocol.
 
 > [!NOTE]
 > This project is a PoC based on my ongoing learning of MQTT.  Any assertive statements based about MQTT are done so
