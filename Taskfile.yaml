@@ -7,26 +7,8 @@ vars:
   broker_url: mqtt://192.168.1.195:1883
 
 tasks:
-  build:
-    cmds:
-      - cd app && GOOS=linux GOARCH=arm64 go build -o "{{.app_executable}}" "./cmd/{{.app_name}}"
-    sources:
-      - "app/**"
-    generates:
-      - "{{.app_executable}}"
-
-  deploy:
-    deps: [build]
-    sources:
-      - "{{.app_executable}}"
-    cmds:
-      - scp "{{.app_executable}}" "{{.ssh_host}}:~/"
-
-  run:
-    deps: [deploy]
-    cmds:
-      - ssh "{{.ssh_host}}" GODEBUG=netdns=go BROKER_URL={{.broker_url}} "./{{.app_name}}"
-
   run-service:
-    cmds:
-      - cd app && go run ./cmd/service
+    docker compose up --force-recreate service
+
+  run-devices:
+    docker compose up device-1 device-2 device-3
