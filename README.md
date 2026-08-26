@@ -10,6 +10,8 @@
 
 In this repo I am exploring an API for defining a typed topic/message schema in Go, such that MQTT send/receive can be done in a type-safe manner using Go types, and the framework will handle topic mapping and message serialization/deserialization.
 
+The goal is to make publisher/subscriber interoperability codified into the framework such that compatible publish/subscriber processes can be generated from a single codebase automatically.  Two processes using the same topic/message definitions are able to talk to each other automatically without having to duplicate MQTT client set-up code.
+
 ## Pub/Sub API
 
 The general API is as follows:
@@ -70,6 +72,7 @@ For more details see the [router](./app/router/doc.go) package.
 * Request/Response API
 * Different encodings
 * Schema Versioning
+* Define topic/message schemas in Protobuf (or similar IDL) to enable multiple compatible clients in different languages
 
 ## Example application
 
