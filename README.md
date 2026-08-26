@@ -31,7 +31,7 @@ type (
 	TemperatureMessage struct {
 		TemperatureCelcius float64
 	}
-    // Define the topic+message mapping
+    // Define the topic+message mapping - generics allow us to tell the system the topic and message types
 	TemperatureTopic = router.TopicDef[Device, TemperatureMessage]
 )
 
@@ -45,7 +45,7 @@ dev := Device{Region: "A", Zone: "B", ID: "1234"}
 topic := TemperatureTopic{}.WithNamespace(dev)
 // Get a publish handle that can be re-used.
 h := router.GetPublishHandle(topic)
-// Publish a message
+// Publish a message - the handle is typed using generics and will only accept `TemperatureMessage` as a parameter
 h.Publish(ctx, TemperatureMessage{TemperatureCelcius: 23.0})
 
 
@@ -55,6 +55,7 @@ h.Publish(ctx, TemperatureMessage{TemperatureCelcius: 23.0})
 
 // Subscribe to all Devices with an empty namespace in TemperatureTopic{}
 router.HandleSubscription(ctx, TemperatureTopic{},
+	// The function parameters are typed based on the `TemperatureTopic` definition
     func(dev Device, msg TemperatureMessage) {
         // Handle message here
     },
