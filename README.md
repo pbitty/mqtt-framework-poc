@@ -32,7 +32,7 @@ type (
 )
 
 //
-// Use the router API to publish
+// Publish messages via the router API
 //
 
 // Define a unique namespace for the device.  Fields names+values determine the unique topic for each device
@@ -46,7 +46,7 @@ h.Publish(ctx, TemperatureMessage{TemperatureCelcius: 23.0})
 
 
 //
-// Use a router API to handle subscriptions
+// Handle subscriptions via the router API
 //
 
 // Subscribe to all Devices with an empty namespace in TemperatureTopic{}
