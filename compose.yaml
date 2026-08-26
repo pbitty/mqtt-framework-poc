@@ -20,10 +20,8 @@ services:
     command: go run -v ./cmd/service
     environment:
       LOG_LEVEL: info
-      
       BROKER_URL: mqtt://mosquitto:1883/
       CLIENT_ID: "service-1"
-
       GOMODCACHE: /gocache/mod
       GOCACHE: /gocache/cache
     tty: true # enables colour output in logs
@@ -35,18 +33,32 @@ services:
       mosquitto:
         condition: service_healthy
 
+  device-1:
+    extends: device
+    environment:
+      CLIENT_ID: "device-1"
+      DEVICE_ID: "device-1"
+
+  device-2:
+    extends: device
+    environment:
+      CLIENT_ID: "device-2"
+      DEVICE_ID: "device-2"
+
+  device-3:
+    extends: device
+    environment:
+      CLIENT_ID: "device-3"
+      DEVICE_ID: "device-3"
+
   device:
     image: golang:1.27-alpine
     command: go run -v ./cmd/device
     environment:
       LOG_LEVEL: info
-    
       BROKER_URL: mqtt://mosquitto:1883/
-      CLIENT_ID: "device-1"
-
       DEVICE_REGION: "region-a"
       DEVICE_ZONE: "zone-b"
-      DEVICE_ID: "1234"
 
       GOMODCACHE: /gocache/mod
       GOCACHE: /gocache/cache
