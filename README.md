@@ -10,26 +10,24 @@
 
 In this repo I am exploring an API for defining a typed topic/message schema in Go, such that MQTT send/receive can be done in a type-safe manner using Go types, and the framework will handle topic mapping and message serialization/deserialization.
 
-### Pub/Sub API
+## Pub/Sub API
 
 The general API is as follows:
 
 ```go
-// Define your topic/message mappings using structs
+// Define your topic/message types using structs
 type (
-    // Used for creating a unique namespace for each device
+    // Define a namespace for each unique device
 	Device struct {
 		Region string
 		Zone   string
 		ID     string
 	}
-
-    // Used for creating a unique device+message topic and serializing/deserializing the payload
+    // Define a message type for serializing/deserializing the payload
 	TemperatureMessage struct {
 		TemperatureCelcius float64
 	}
-
-    // Defines the topic as a hierarchy containing the Device fields + the message name/type
+    // Define the topic+message mapping
 	TemperatureTopic = router.TopicDef[Device, TemperatureMessage]
 )
 
@@ -37,11 +35,11 @@ type (
 // Use the router API to publish
 //
 
-// Define a unique namespace for the device
+// Define a unique namespace for the device.  Fields names+values determine the unique topic for each device
 dev := Device{Region: "A", Zone: "B", ID: "1234"}
-// Define the topic
+// Define the topic for this specific Device
 topic := TemperatureTopic{}.WithNamespace(dev)
-// Get a publish handle that can be re-used
+// Get a publish handle that can be re-used.
 h := router.GetPublishHandle(topic)
 // Publish a message
 h.Publish(ctx, TemperatureMessage{TemperatureCelcius: 23.0})
@@ -67,11 +65,37 @@ router.HandleSubscription(ctx, TemperatureTopic{}.WithNamespace(Device{Region: "
 
 For more details see the [router](./app/router/doc.go) package.
 
-### Future concerns to explore
+## Future concerns to explore
 
 * Request/Response API
 * Different encodings
 * Schema Versioning
+
+## Example application
+
+An example application is implemented in the [service](./app/service/) package, with executables in [cmd](./app/cmd).
+
+To run the examples:
+
+1. Ensure [Docker Compose](https://docs.docker.com/compose/install/) and [Task](https://taskfile.dev/docs/installation) are installed.
+
+2. Start the `service` process
+
+       task run-service
+
+   Without `task` you can run Docker Compose directly:
+
+       docker compose up service
+
+3. In another shell, start the `device` processes, which simulate publishing temperature readings
+
+       task run-devices
+
+   Without `task` you can run Docker Compose directly:
+
+       docker compose up device-1 device-2 device-3
+
+
 
 ----------------------------------------------------------------------------------------------------
 

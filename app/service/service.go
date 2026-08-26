@@ -9,6 +9,8 @@ import (
 	"go.uber.org/fx"
 )
 
+// Service represents a process running on a computer,
+// receiving temperature readings from an MQTT broker (published by [Device]).
 type Service struct {
 	logger *slog.Logger
 	router *router.Router

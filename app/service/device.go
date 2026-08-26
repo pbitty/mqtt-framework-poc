@@ -13,6 +13,8 @@ import (
 	"go.uber.org/fx"
 )
 
+// Device represents a process running on a IoT device,
+// publishing temperature readings to an MQTT broker.
 type Device struct {
 	temperature router.PublishHandle[TemperatureMessage]
 	interval    time.Duration
