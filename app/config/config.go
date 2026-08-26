@@ -11,6 +11,7 @@ import (
 
 type Config struct {
 	BrokerUrl URLValue `envconfig:"BROKER_URL" required:"true"`
+	ClientID  string   `envconfig:"CLIENT_ID" required:"true"`
 }
 
 type DeviceConfig struct {

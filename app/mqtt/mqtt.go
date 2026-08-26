@@ -25,7 +25,7 @@ func NewClient(cfg config.Config, logger *slog.Logger, lc fx.Lifecycle, sd fx.Sh
 			logger.Error("connection_error", "error", err)
 		},
 		ClientConfig: paho.ClientConfig{
-			ClientID: "my-client-id",
+			ClientID: cfg.ClientID,
 			Session:  state.NewInMemory(),
 			OnServerDisconnect: func(d *paho.Disconnect) {
 				logger.Info("server_disconnect", "reason", d.Properties.ReasonString)

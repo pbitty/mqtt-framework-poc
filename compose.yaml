@@ -19,17 +19,46 @@ services:
     image: golang:1.27-alpine
     command: go run -v ./cmd/service
     environment:
+      LOG_LEVEL: info
+      
       BROKER_URL: mqtt://mosquitto:1883/
+      CLIENT_ID: "service-1"
+
       GOMODCACHE: /gocache/mod
       GOCACHE: /gocache/cache
-    tty: true # enables colour output from charmlog
-    working_dir: /app
+    tty: true # enables colour output in logs
     volumes:
       - ./app:/app
       - gocache:/gocache
+    working_dir: /app
     depends_on:
       mosquitto:
         condition: service_healthy
+
+  device:
+    image: golang:1.27-alpine
+    command: go run -v ./cmd/device
+    environment:
+      LOG_LEVEL: info
+    
+      BROKER_URL: mqtt://mosquitto:1883/
+      CLIENT_ID: "device-1"
+
+      DEVICE_REGION: "region-a"
+      DEVICE_ZONE: "zone-b"
+      DEVICE_ID: "1234"
+
+      GOMODCACHE: /gocache/mod
+      GOCACHE: /gocache/cache
+    tty: true # enables colour output in logs
+    volumes:
+      - ./app:/app
+      - gocache:/gocache
+    working_dir: /app
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+
 
 volumes:
   gocache: {}

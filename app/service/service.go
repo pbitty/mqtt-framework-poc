@@ -5,38 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
-	"time"
 )
-
-type Device struct {
-	interval time.Duration
-	handle   router.PublishHandle[TemperatureMessage]
-}
-
-func NewDevice(r *router.Router, ns DeviceNamespace) *Device {
-	return &Device{
-		handle: r.GetPublishHandle(TemperatureTopic{}.WithNamespace(ns)),
-	}
-}
-
-func (d *Device) Run(ctx context.Context) error {
-	tick := time.Tick(d.interval)
-
-	for {
-		select {
-		case <-tick:
-			m := TemperatureMessage{
-				TemperatureCelcius: rand.Float64(),
-			}
-			if err := d.handle.Publish(ctx, m); err != nil {
-				return err
-			}
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-}
 
 type Service struct {
 	logger *slog.Logger
@@ -58,9 +27,11 @@ func (s Service) Start(ctx context.Context) error {
 		return fmt.Errorf("subscribing to TemperatureTopic: %w", err)
 	}
 
+	s.logger.Debug("service_started")
+
 	return nil
 }
 
 func (s Service) handleTemperature(ns DeviceNamespace, msg TemperatureMessage) {
-	s.logger.Info("temperature_received", "ns", ns, "temp_celcius", msg.TemperatureCelcius)
+	s.logger.Info("temperature_received", "namespace", ns, "temp_celcius", fmt.Sprintf("%0.2f", msg.TemperatureCelcius))
 }

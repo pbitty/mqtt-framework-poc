@@ -11,6 +11,7 @@ import (
 
 	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
+	"go.uber.org/fx"
 )
 
 // TopicDef represents typed a Message that can be sent/received under a Namespace.
@@ -58,7 +59,7 @@ func (t TopicDef[N, M]) WithNamespace(n N) TopicDef[N, M] {
 }
 
 func (t TopicDef[Namespace, Message]) String() string {
-	return "TopicDef:" + t.getPublishTopic()
+	return "TopicDef:" + t.getSubscribeTopic()
 }
 
 func (t TopicDef[P, M]) getPublishTopic() string {
@@ -172,6 +173,8 @@ type PublishHandle[M any] struct {
 	cm        *autopaho.ConnectionManager
 	marshalFn func(any) ([]byte, error)
 	topic     string
+
+	logger *slog.Logger
 }
 
 func (p PublishHandle[M]) Publish(ctx context.Context, m M) error {
@@ -189,6 +192,7 @@ func (p PublishHandle[M]) Publish(ctx context.Context, m M) error {
 	if err != nil {
 		return fmt.Errorf("publishing message to topic (%s): %w", topic, err)
 	}
+	p.logger.Debug("published_to_topic", "topic", topic)
 
 	return nil
 }
@@ -209,7 +213,7 @@ type Router struct {
 	unmarshal func([]byte, any) error
 }
 
-func NewRouter(cm *autopaho.ConnectionManager, logger *slog.Logger) *Router {
+func NewRouter(cm *autopaho.ConnectionManager, logger *slog.Logger, lc fx.Lifecycle) *Router {
 	r := &Router{
 		cm:     cm,
 		logger: logger,
@@ -217,11 +221,17 @@ func NewRouter(cm *autopaho.ConnectionManager, logger *slog.Logger) *Router {
 
 		marshal:   json.Marshal,
 		unmarshal: json.Unmarshal,
+
+		deregister: func() {}, // no-op until started
 	}
 
-	var once sync.Once
-	deregister := cm.AddOnPublishReceived(r.onPublishReceived)
-	r.deregister = func() { once.Do(deregister) }
+	lc.Append(fx.StartHook(func() {
+		// Register our callback in start hook so that ConnectionManager is guaranteed to be connected
+		deregister := cm.AddOnPublishReceived(r.onPublishReceived)
+
+		var once sync.Once
+		r.deregister = func() { once.Do(deregister) }
+	}))
 
 	return r
 }
@@ -240,6 +250,8 @@ func (r *Router) HandleSubscription[N, M any](ctx context.Context, route TopicDe
 			return fmt.Errorf("subscribing to topic %s: %w", topic, err)
 		}
 
+		r.logger.Debug("subscribed_to_topic", "topic", topic)
+
 		r.subs[topic] = &subInfo{
 			routePath: route.getSubscribeSegments(),
 			handlers:  make([]func(*paho.Publish), 0),
@@ -247,6 +259,8 @@ func (r *Router) HandleSubscription[N, M any](ctx context.Context, route TopicDe
 	}
 
 	r.subs[topic].handlers = append(r.subs[topic].handlers, r.newRouteHandler(route, h))
+
+	r.logger.Debug("subscription_handler_registered", "route", route)
 
 	return nil
 }
@@ -256,6 +270,7 @@ func (r *Router) GetPublishHandle[N, M any](t TopicDef[N, M]) PublishHandle[M] {
 		cm:        r.cm,
 		marshalFn: r.marshal,
 		topic:     t.getPublishTopic(),
+		logger:    r.logger,
 	}
 }
 
@@ -268,8 +283,12 @@ func (r *Router) onPublishReceived(pr autopaho.PublishReceived) (bool, error) {
 	r.subsMu.RLock()
 	defer r.subsMu.RUnlock()
 
+	topic := pr.Packet.Topic
+	r.logger.Debug("message_received", "topic", topic, "payload", pr.Packet.Payload)
+
 	for _, s := range r.subs {
-		if s.routePath.matchesTopic(pr.Packet.Topic) {
+		if s.routePath.matchesTopic(topic) {
+			r.logger.Debug("route_matched", "route", s.routePath, "topic", topic)
 			for _, h := range s.handlers {
 				h(pr.Packet)
 			}
