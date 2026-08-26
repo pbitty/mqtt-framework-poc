@@ -5,6 +5,8 @@
 > on limited experience.
 > 
 > The APIs explored here are not based on years of experience and might be misguided.  Feedback is welcome.
+>
+> This project is for learning and showcasing through doing. As such, no AI agent is being used to generate any code or documentation.
 
 ## Overview
 
