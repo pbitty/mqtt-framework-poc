@@ -10,9 +10,9 @@
 
 ## Overview
 
-In this repo I am exploring an API for defining a typed topic/message schema in Go, such that MQTT send/receive can be done in a type-safe manner using Go types, and the framework will handle topic mapping and message serialization/deserialization.
+This project explores an API for defining a typed topic/message schema in Go, such that MQTT send/receive can be done in a type-safe manner and the framework will handle topic mapping and message serialization/deserialization (serde).
 
-The goal is to make publisher/subscriber interoperability codified into the framework such that compatible publish/subscriber processes can be generated from a single codebase automatically.  Two processes using the same topic/message definitions are able to talk to each other automatically without having to duplicate MQTT client set-up code.
+The goal is to make publisher/subscriber interoperability codified into the framework so that compatible publish/subscriber processes can be generated from a single codebase automatically.  Two processes using the same topic/message definitions are able to talk to each other automatically without having to duplicate MQTT client set-up code and serde code.
 
 ## Pub/Sub API
 
