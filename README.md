@@ -3,9 +3,8 @@
 This is a PoC project to do hands-on learn on IoT programming.  Currently with a focus on the MQTT protocol.
 
 > [!NOTE]
-> This project is a PoC based on my ongoing learning of MQTT.  Any assertive statements based about MQTT are done so
-> for convenience, and are based on limited experience.  This is to avoid saying _"MQTT seems to be ..."_ and instead
-> say _"MQTT is ..."_.
+> This project is a PoC based on my ongoing learning of MQTT.  Any observations made about MQTT are based 
+> on limited experience.
 > 
 > The APIs explored here are not based on years of experience and might be misguided.  Feedback is welcome.
 
