@@ -46,7 +46,6 @@ func (t TopicDef[N, M]) Namespace() N {
 }
 
 func (t TopicDef[N, M]) WithNamespace(n N) TopicDef[N, M] {
-	validateTypes[N, M]()
 	return TopicDef[N, M]{namespace: n}
 }
 
@@ -71,22 +70,9 @@ func (t TopicDef[P, M]) generateTopicPath(emptyValuesAsWildcards bool) string {
 	return strings.Join(parts, "/")
 }
 
-func validateTypes[N, M any]() {
-	ns := reflect.TypeFor[N]()
-	if ns.Kind() != reflect.Struct {
-		panic(fmt.Sprintf("Namespace must be a struct, found %s", ns))
-	}
-
-	msg := reflect.TypeFor[M]()
-	if msg.Kind() != reflect.Struct {
-		panic(fmt.Sprintf("Message type (M) must be a struct, found %s", msg.Kind()))
-	}
-	if msg.Name() == "" {
-		panic(fmt.Sprintf("Message struct must be named (cannot be anonymous)"))
-	}
-}
-
 func (t TopicDef[N, M]) generateTopicSegments(emptyValuesAsWildcards bool) []string {
+	t.validateTypeParameters()
+
 	ns := reflect.ValueOf(t.namespace)
 	parts := make([]string, 0,
 		// namespace field+value pairs, plus the name of M
@@ -136,6 +122,21 @@ func (t TopicDef[N, M]) namespaceFromTopic(topic string) N {
 	}
 
 	return ns.Interface().(N)
+}
+
+func (t TopicDef[N, M]) validateTypeParameters() {
+	ns := reflect.TypeFor[N]()
+	if ns.Kind() != reflect.Struct {
+		panic(fmt.Sprintf("Namespace must be a struct, found %s", ns))
+	}
+
+	msg := reflect.TypeFor[M]()
+	if msg.Kind() != reflect.Struct {
+		panic(fmt.Sprintf("Message type (M) must be a struct, found %s", msg.Kind()))
+	}
+	if msg.Name() == "" {
+		panic(fmt.Sprintf("Message struct must be named (cannot be anonymous)"))
+	}
 }
 
 type topicSegments []string

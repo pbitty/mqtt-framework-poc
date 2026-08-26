@@ -132,7 +132,7 @@ func (ts *RouterTestSuite) TestPublishAndSubscribe() {
 				MyMessage{"hello world!"},
 			},
 			result1.Load(),
-			"no message received on namespace %+v", t1.Namespace(),
+			"no message received on topic %+v", t1,
 		)
 
 		assert.Equal(collect,
@@ -141,7 +141,7 @@ func (ts *RouterTestSuite) TestPublishAndSubscribe() {
 				MyMessage{"hello world!"},
 			},
 			result2.Load(),
-			"no message received on namespace %+v", t2.Namespace(),
+			"no message received on topic %+v", t2,
 		)
 
 		assert.Equal(collect,
@@ -150,7 +150,7 @@ func (ts *RouterTestSuite) TestPublishAndSubscribe() {
 				MyMessage{"hello world!"},
 			},
 			result3.Load(),
-			"no message received on namespace %+v", t3.Namespace(),
+			"no message received on topic %+v", t3,
 		)
 	}, timeout, tick)
 }
