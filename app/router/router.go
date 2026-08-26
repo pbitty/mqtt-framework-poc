@@ -12,6 +12,9 @@ import (
 	"go.uber.org/fx"
 )
 
+// Router enables type-safe publishing and handling of messages in MQTT.
+//
+// See the main README for more details.
 type Router struct {
 	cm         *autopaho.ConnectionManager
 	deregister func()
