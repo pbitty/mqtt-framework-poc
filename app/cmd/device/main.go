@@ -29,8 +29,6 @@ var Opts = []fx.Option{
 	fx.WithLogger(log.NewFxLogger),
 }
 
-func EntryPoint(d *service.Device, lc fx.Lifecycle) {
-	// Start the device in a start hook so that the MQTT client is guanranteed to
-	// be started before we register subscriptions or publish messages.
-	lc.Append(fx.StartHook(d.Start))
+func EntryPoint(d *service.Device) {
+	// Require Device to kick off dependency graph
 }

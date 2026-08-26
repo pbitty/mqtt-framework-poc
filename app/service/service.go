@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+
+	"go.uber.org/fx"
 )
 
 type Service struct {
@@ -12,16 +14,20 @@ type Service struct {
 	router *router.Router
 }
 
-func NewService(l *slog.Logger, r *router.Router) *Service {
-	return &Service{
+func NewService(l *slog.Logger, r *router.Router, lc fx.Lifecycle) *Service {
+	s := &Service{
 		logger: l,
 		router: r,
 	}
+
+	lc.Append(fx.StartHook(s.start))
+
+	return s
 }
 
 // Start enables the service by registering all of its routes.  If the context deadline is exceeded or the context is canceled,
 // an error is returned, wrapping the context's error.
-func (s Service) Start(ctx context.Context) error {
+func (s Service) start(ctx context.Context) error {
 	err := s.router.HandleSubscription(ctx, TemperatureTopic{}, s.handleTemperature)
 	if err != nil {
 		return fmt.Errorf("subscribing to TemperatureTopic: %w", err)

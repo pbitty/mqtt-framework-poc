@@ -9,6 +9,8 @@ import (
 	"math/rand/v2"
 	"sync"
 	"time"
+
+	"go.uber.org/fx"
 )
 
 type Device struct {
@@ -19,22 +21,26 @@ type Device struct {
 	startOnce   sync.Once
 }
 
-func NewDevice(cfg config.DeviceConfig, r *router.Router, l *slog.Logger) *Device {
+func NewDevice(cfg config.DeviceConfig, r *router.Router, l *slog.Logger, lc fx.Lifecycle) *Device {
 	ns := DeviceNamespace{
 		Region: cfg.Device.Region,
 		Zone:   cfg.Device.Zone,
 		ID:     cfg.Device.ID,
 	}
 
-	return &Device{
+	d := &Device{
 		temperature: r.GetPublishHandle(TemperatureTopic{}.WithNamespace(ns)),
 		interval:    time.Second,
 		logger:      l,
 		timeout:     5 * time.Second, // TODO make this adjustable
 	}
+
+	lc.Append(fx.StartHook(d.start))
+
+	return d
 }
 
-func (d *Device) Start() {
+func (d *Device) start() {
 	d.startOnce.Do(func() {
 		go d.runLoop()
 	})
