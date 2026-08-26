@@ -1,12 +1,79 @@
 # mqtt-framework-poc
 
-This is a PoC project to do hands-on learn on IoT programming.  Currently with a focus on the MQTT protocol.
-
 > [!NOTE]
 > This project is a PoC based on my ongoing learning of MQTT.  Any observations made about MQTT are based 
 > on limited experience.
 > 
 > The APIs explored here are not based on years of experience and might be misguided.  Feedback is welcome.
+
+## Overview
+
+In this repo I am exploring an API for defining a typed topic/message schema in Go, such that MQTT send/receive can be done in a type-safe manner using Go types, and the framework will handle topic mapping and message serialization/deserialization.
+
+### Pub/Sub API
+
+The general API is as follows:
+
+```go
+// Define your topic/message mappings using structs
+type (
+    // Used for creating a unique namespace for each device
+	Device struct {
+		Region string
+		Zone   string
+		ID     string
+	}
+
+    // Used for creating a unique device+message topic and serializing/deserializing the payload
+	TemperatureMessage struct {
+		TemperatureCelcius float64
+	}
+
+    // Defines the topic as a hierarchy containing the Device fields + the message name/type
+	TemperatureTopic = router.TopicDef[Device, TemperatureMessage]
+)
+
+//
+// Use the router API to publish
+//
+
+// Define a unique namespace for the device
+dev := Device{Region: "A", Zone: "B", ID: "1234"}
+// Define the topic
+topic := TemperatureTopic{}.WithNamespace(dev)
+// Get a publish handle that can be re-used
+h := router.GetPublishHandle(topic)
+// Publish a message
+h.Publish(ctx, TemperatureMessage{TemperatureCelcius: 23.0})
+
+
+//
+// Use a router API to handle subscriptions
+//
+
+// Subscribe to all Devices with an empty namespace in TemperatureTopic{}
+router.HandleSubscription(ctx, TemperatureTopic{},
+    func(dev Device, msg TemperatureMessage) {
+        // Handle message here
+    },
+)
+// Subscribe to a subset of Devices by constraining some fields of the namespace
+router.HandleSubscription(ctx, TemperatureTopic{}.WithNamespace(Device{Region: "A"}),
+    func(dev Device, msg TemperatureMessage) {
+            // Handle only messages from Region "A" here
+    },
+)
+```
+
+For more details see the [router](./app/router/doc.go) package.
+
+### Future concerns to explore
+
+* Request/Response API
+* Different encodings
+* Schema Versioning
+
+----------------------------------------------------------------------------------------------------
 
 ## Framework Design Notes
 
@@ -72,11 +139,6 @@ type TemperatureReading struct {
 ```
 
 Joined with the `Device` topic above, the topic name would be `Type/A/Zone/B/Building/C/Level/D/Room/E/ID/1234-abcd/TemperatureReading`.
-
-### Router API
-
-The [router](./app/router/doc.go) package contains a evolving PoC of the ideas above with APIs for publishing and subscribing to messages in a type-safe manner using Go structs to define the topic+message schemas.
-
 
 ## Work log
 
