@@ -1,11 +1,13 @@
 # mqtt-framework-poc
 
+This is a toy project to do hands-on learn on IoT programming.  Currently with a focus on the MQTT protocol.
+
 > [!NOTE]
 > This project is a PoC based on my ongoing learning of MQTT.  Any assertive statements based about MQTT are done so
 > for convenience, and are based on limited experience.  This is to avoid saying _"MQTT seems to be ..."_ and instead
 > say _"MQTT is ..."_.
-
-This is a toy project to do hands-on learn on IoT programming.  Currently with a focus on the MQTT protocol.
+> 
+> The APIs explored here are not based on years of experience and might be misguided.  Feedback is welcome.
 
 ## Framework Design Notes
 

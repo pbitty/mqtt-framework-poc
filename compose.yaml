@@ -1,5 +1,5 @@
 services:
-  mosquito:
+  mosquitto:
     image: eclipse-mosquitto:2.1.2-alpine
     volumes:
       - ./mosquitto/config:/mosquitto/config
@@ -7,3 +7,29 @@ services:
       - ./mosquitto/log:/mosquitto/log
     ports:
       - 1883:1883
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "1883"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_interval: 1s
+      start_period: 60s
+
+  service:
+    image: golang:1.27-alpine
+    command: go run -v ./cmd/service
+    environment:
+      BROKER_URL: mqtt://mosquitto:1883/
+      GOMODCACHE: /gocache/mod
+      GOCACHE: /gocache/cache
+    tty: true # enables colour output from charmlog
+    working_dir: /app
+    volumes:
+      - ./app:/app
+      - gocache:/gocache
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+
+volumes:
+  gocache: {}

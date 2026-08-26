@@ -226,7 +226,7 @@ func NewRouter(cm *autopaho.ConnectionManager, logger *slog.Logger) *Router {
 	return r
 }
 
-func (r *Router) GetSubscription[N, M any](ctx context.Context, route TopicDef[N, M], h SubscriptionHandler[N, M]) error {
+func (r *Router) HandleSubscription[N, M any](ctx context.Context, route TopicDef[N, M], h SubscriptionHandler[N, M]) error {
 	r.subsMu.Lock()
 	defer r.subsMu.Unlock()
 
@@ -285,7 +285,6 @@ func (r *Router) newRouteHandler[N, M any](route TopicDef[N, M], h SubscriptionH
 
 		var msg M
 		if err := r.unmarshal(pb.Payload, &msg); err != nil {
-			// TODO log
 			r.logger.Error("error_unmarshalling_message", "route", route.getSubscribeTopic(), "topic", topic)
 			return
 		}

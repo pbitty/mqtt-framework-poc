@@ -115,9 +115,9 @@ func (ts *RouterTestSuite) TestPublishAndSubscribe() {
 		tick    = 100 * time.Millisecond
 	)
 
-	r.GetSubscription(ctx, t1, func(n MyNamespace, m MyMessage) { result1.Store(result{n, m}) })
-	r.GetSubscription(ctx, t2, func(n MyNamespace, m MyMessage) { result2.Store(result{n, m}) })
-	r.GetSubscription(ctx, t3, func(n MyNamespace, m MyMessage) { result3.Store(result{n, m}) })
+	r.HandleSubscription(ctx, t1, func(n MyNamespace, m MyMessage) { result1.Store(result{n, m}) })
+	r.HandleSubscription(ctx, t2, func(n MyNamespace, m MyMessage) { result2.Store(result{n, m}) })
+	r.HandleSubscription(ctx, t3, func(n MyNamespace, m MyMessage) { result3.Store(result{n, m}) })
 
 	r.GetPublishHandle(t1).Publish(ctx, MyMessage{Value: "hello world!"})
 

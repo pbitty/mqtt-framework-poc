@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"net/url"
+	"reflect"
 
 	"github.com/kelseyhightower/envconfig"
 )
@@ -21,24 +23,27 @@ type DeviceConfig struct {
 	} `envconfig:"DEVICE" required:"true"`
 }
 
-func NewDeviceConfig() (DeviceConfig, error) {
-	var c DeviceConfig
-	if err := envconfig.Process("", &c); err != nil {
-		return c, fmt.Errorf("parsing env vars for DeviceConfig: %w", err)
-	}
-
-	return c, nil
+func NewDeviceConfig(l *slog.Logger) (DeviceConfig, error) {
+	return newConfig[DeviceConfig](l)
 }
 
 type ServiceConfig struct {
 	Config
 }
 
-func NewServiceConfig() (ServiceConfig, error) {
-	var c ServiceConfig
+func NewServiceConfig(l *slog.Logger) (ServiceConfig, error) {
+	return newConfig[ServiceConfig](l)
+}
+
+func newConfig[T any](logger *slog.Logger) (T, error) {
+	typeName := reflect.TypeFor[T]().Name()
+
+	var c T
 	if err := envconfig.Process("", &c); err != nil {
-		return c, fmt.Errorf("parsing env vars for ServiceConfig: %w", err)
+		return c, fmt.Errorf("parsing env vars for %s: %w", typeName, err)
 	}
+
+	logger.Info("config_loaded", "type", typeName, "config", c)
 
 	return c, nil
 }
@@ -55,7 +60,7 @@ func (u *URLValue) Decode(value string) error {
 	if err != nil {
 		return fmt.Errorf("parsing url (%v): %w", value, err)
 	}
-	*u.URL = *parsed
+	*u = URLValue{URL: parsed}
 
 	return nil
 }
