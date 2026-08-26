@@ -18,6 +18,7 @@ import (
 	"github.com/eclipse/paho.golang/paho/session/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
+	"go.uber.org/fx/fxtest"
 )
 
 type RouterTestSuite struct {
@@ -101,7 +102,8 @@ func (ts *RouterTestSuite) TestPublishAndSubscribe() {
 
 	var (
 		ctx = ts.T().Context()
-		r   = router.NewRouter(ts.cm, ts.logger)
+		lc  = fxtest.NewLifecycle(ts.T())
+		r   = router.NewRouter(ts.cm, ts.logger, lc)
 
 		t1 = MyTopic{}.WithNamespace(MyNamespace{Section: "A", SubSection: "B", DeviceId: "device-1"})
 		t2 = MyTopic{}.WithNamespace(MyNamespace{Section: "A"})
@@ -114,6 +116,8 @@ func (ts *RouterTestSuite) TestPublishAndSubscribe() {
 		timeout = 5 * time.Second
 		tick    = 100 * time.Millisecond
 	)
+
+	lc.RequireStart()
 
 	r.HandleSubscription(ctx, t1, func(n MyNamespace, m MyMessage) { result1.Store(result{n, m}) })
 	r.HandleSubscription(ctx, t2, func(n MyNamespace, m MyMessage) { result2.Store(result{n, m}) })
