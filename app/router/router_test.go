@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -23,7 +24,7 @@ import (
 
 type RouterTestSuite struct {
 	suite.Suite
-	cm     *autopaho.ConnectionManager
+	router *router.Router
 	logger *slog.Logger
 }
 
@@ -38,7 +39,7 @@ func TestRouterTestSuite(t *testing.T) {
 func (ts *RouterTestSuite) SetupTest() {
 	logger := slog.New(slog.NewTextHandler(ts.T().Output(), &slog.HandlerOptions{
 		AddSource: true,
-		Level:     slog.LevelDebug,
+		Level:     slog.LevelInfo,
 	}))
 
 	clientId := ts.T().Name() +
@@ -62,6 +63,7 @@ func (ts *RouterTestSuite) SetupTest() {
 		KeepAlive:                     5,
 		CleanStartOnInitialConnection: true,
 		OnConnectError:                func(err error) { ts.T().Log("connection_error: ", err) },
+		ConnectTimeout:                5 * time.Second,
 		ClientConfig: paho.ClientConfig{
 			ClientID:           clientId,
 			Session:            state.NewInMemory(),
@@ -78,8 +80,12 @@ func (ts *RouterTestSuite) SetupTest() {
 	err = cm.AwaitConnection(ctx)
 	ts.Require().NoError(err, "error starting connection to MQTT broker")
 
-	ts.cm = cm
 	ts.logger = logger
+
+	lc := fxtest.NewLifecycle(ts.T())
+	ts.router = router.NewRouter(cm, ts.logger, lc)
+
+	lc.RequireStart()
 }
 
 func (ts *RouterTestSuite) TestPublishAndSubscribe() {
@@ -102,8 +108,7 @@ func (ts *RouterTestSuite) TestPublishAndSubscribe() {
 
 	var (
 		ctx = ts.T().Context()
-		lc  = fxtest.NewLifecycle(ts.T())
-		r   = router.NewRouter(ts.cm, ts.logger, lc)
+		r   = ts.router
 
 		t1 = MyTopic{}.WithNamespace(MyNamespace{Section: "A", SubSection: "B", DeviceId: "device-1"})
 		t2 = MyTopic{}.WithNamespace(MyNamespace{Section: "A"})
@@ -116,8 +121,6 @@ func (ts *RouterTestSuite) TestPublishAndSubscribe() {
 		timeout = 5 * time.Second
 		tick    = 100 * time.Millisecond
 	)
-
-	lc.RequireStart()
 
 	r.HandleSubscription(ctx, t1, func(n MyNamespace, m MyMessage) { result1.Store(result{n, m}) })
 	r.HandleSubscription(ctx, t2, func(n MyNamespace, m MyMessage) { result2.Store(result{n, m}) })
@@ -153,6 +156,152 @@ func (ts *RouterTestSuite) TestPublishAndSubscribe() {
 			"no message received on topic %+v", t3,
 		)
 	}, timeout, tick)
+}
+
+func (ts *RouterTestSuite) TestRequestResponse() {
+	type MyNamespace struct {
+		Section    string
+		SubSection string
+		DeviceId   string
+	}
+
+	type MyRequest struct {
+		Value string
+	}
+
+	type MyResponse struct {
+		Value string
+	}
+
+	type MyEndpoint = router.Endpoint[MyNamespace, MyRequest, MyResponse]
+
+	var (
+		ctx    = ts.T().Context()
+		router = ts.router
+		ep     = MyEndpoint{}.WithNamespace(MyNamespace{Section: "A", SubSection: "B", DeviceId: "device-1"})
+	)
+
+	router.HandleRequest(ctx, ep, func(_ MyNamespace, r MyRequest) MyResponse {
+		return MyResponse{
+			Value: "response for " + r.Value,
+		}
+	})
+
+	res, err := router.SendRequest(ctx, ep, MyRequest{Value: "request 1"})
+	ts.Require().NoError(err)
+
+	ts.Assert().Equal("response for request 1", res.Value)
+}
+
+func (ts *RouterTestSuite) TestRequestResponseBroadcast() {
+	type MyNamespace struct {
+		Section    string
+		SubSection string
+		DeviceId   string
+	}
+
+	type MyRequest struct {
+		Value string
+	}
+
+	type MyResponse struct {
+		Value string
+	}
+
+	type MyEndpoint = router.Endpoint[MyNamespace, MyRequest, MyResponse]
+
+	var (
+		ctx     = ts.T().Context()
+		router  = ts.router
+		ep      = MyEndpoint{}.WithNamespace(MyNamespace{Section: "A", SubSection: "B", DeviceId: "device-1"})
+		numMsgs = 100
+	)
+
+	for range numMsgs {
+		// Register multiple handlers to simulate multiple devices responding
+		router.HandleRequest(ctx, ep, func(_ MyNamespace, r MyRequest) MyResponse {
+			return MyResponse{
+				Value: "response for " + r.Value,
+			}
+		})
+	}
+
+	responses, close, err := router.SendBroadcastRequest(ctx, ep, MyRequest{Value: "request 1"})
+	ts.Require().NoError(err)
+	defer close()
+
+	timeout := 10 * time.Second
+	expired := time.After(timeout)
+
+	for range numMsgs {
+		select {
+		case res := <-responses:
+			ts.Assert().Equal("response for request 1", res.Value)
+		case <-expired:
+			ts.FailNowf("timeout", "did not receive %d responses after %s", numMsgs, timeout)
+		}
+	}
+}
+
+func (ts *RouterTestSuite) TestRequestResponseBroadcastConcurrent() {
+	type MyNamespace struct {
+		Section    string
+		SubSection string
+		DeviceId   string
+	}
+
+	type MyRequest struct {
+		Value string
+	}
+
+	type MyResponse struct {
+		Value string
+	}
+
+	type MyEndpoint = router.Endpoint[MyNamespace, MyRequest, MyResponse]
+
+	var (
+		ctx                   = ts.T().Context()
+		router                = ts.router
+		ep                    = MyEndpoint{}.WithNamespace(MyNamespace{Section: "A", SubSection: "B", DeviceId: "device-1"})
+		numMsgs               = 100
+		numConcurrentRequests = 100
+	)
+
+	for range numMsgs {
+		// Register multiple handlers to simulate multiple devices responding
+		router.HandleRequest(ctx, ep, func(_ MyNamespace, r MyRequest) MyResponse {
+			return MyResponse{
+				Value: "response for " + r.Value,
+			}
+		})
+	}
+
+	var wg sync.WaitGroup
+
+	for n := range numConcurrentRequests {
+		wg.Go(func() {
+			value := "request " + strconv.Itoa(n)
+
+			responses, close, err := router.SendBroadcastRequest(ctx, ep, MyRequest{Value: value})
+			ts.Require().NoError(err)
+			defer close()
+
+			timeout := 10 * time.Second
+			expired := time.After(timeout)
+
+			for range numMsgs {
+				select {
+				case res := <-responses:
+					ts.Assert().Equal("response for "+value, res.Value)
+				case <-expired:
+					ts.FailNowf("timeout", "did not receive %d responses after %s", numMsgs, timeout)
+				}
+			}
+		})
+	}
+
+	wg.Wait()
 }
 
 func ExampleTopicDef() {

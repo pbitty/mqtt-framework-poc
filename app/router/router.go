@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
+	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
@@ -16,11 +19,12 @@ import (
 //
 // See the main README for more details.
 type Router struct {
-	cm         *autopaho.ConnectionManager
-	deregister func()
-	logger     *slog.Logger
-	subs       map[string]*subInfo
-	subsMu     sync.RWMutex
+	cm           *autopaho.ConnectionManager
+	deregister   func()
+	logger       *slog.Logger
+	subs         map[string]*subInfo
+	subsMu       sync.RWMutex
+	subHandlerId atomic.Int64
 
 	marshal   func(any) ([]byte, error)
 	unmarshal func([]byte, any) error
@@ -50,6 +54,152 @@ func NewRouter(cm *autopaho.ConnectionManager, logger *slog.Logger, lc fx.Lifecy
 }
 
 func (r *Router) HandleSubscription[N, M any](ctx context.Context, route TopicDef[N, M], h SubscriptionHandler[N, M]) error {
+	_, err := r.registerRouteHandler(ctx, route,
+		func(_ *paho.Publish, ns N, msg M) {
+			// For subscriptions we don't need anything on *paho.Publish
+			h(ns, msg)
+		},
+	)
+
+	return err
+}
+
+func (r *Router) GetPublishHandle[N, M any](t TopicDef[N, M]) PublishHandle[M] {
+	return PublishHandle[M]{
+		router: r,
+		topic:  t.getPublishTopic(),
+	}
+}
+
+func (r *Router) HandleRequest[Ns, Req, Res any](ctx context.Context, e Endpoint[Ns, Req, Res], h EndpointHandler[Ns, Req, Res]) error {
+	_, err := r.registerRouteHandler(ctx, e.route,
+		func(p *paho.Publish, n Ns, req Req) {
+			logger := r.logger.With("publish_topic", p.Topic)
+
+			if p.Properties == nil {
+				logger.Error("missing_publish_properties")
+				return
+			}
+
+			rt := p.Properties.ResponseTopic
+			if rt == "" {
+				logger.Error("missing_response_topic")
+				return
+			}
+
+			res := h(n, req)
+
+			if err := r.publish(ctx, rt, "", p.Properties.CorrelationData, res); err != nil {
+				logger.Error("publishing_response", "response_topic", rt)
+			}
+		},
+	)
+
+	return err
+}
+
+func (r *Router) SendRequest[Ns, Req, Res any](ctx context.Context, e Endpoint[Ns, Req, Res], req Req) (Res, error) {
+	res, close, err := r.SendBroadcastRequest(ctx, e, req)
+	if err != nil {
+		var r Res
+		return r, err
+	}
+
+	defer close()
+
+	select {
+	case r := <-res:
+		return r, nil
+	case <-ctx.Done():
+		var r Res
+		return r, ctx.Err()
+	}
+}
+
+type ResponseClose func()
+
+func (r *Router) SendBroadcastRequest[Ns, Req, Res any](
+	ctx context.Context,
+	e Endpoint[Ns, Req, Res],
+	req Req,
+) (<-chan Res, ResponseClose, error) {
+	publishTopic := e.route.getPublishTopic()
+	responseTopic := TopicDef[Ns, Res]{}.WithNamespace(e.route.namespace)
+
+	responses := make(chan Res)
+
+	// TODO Find a more robust way to generate random bytes
+	correlationID := strconv.Itoa(int(rand.Int32()))
+
+	deregister, err := r.registerRouteHandler(ctx, responseTopic,
+		func(pb *paho.Publish, _ Ns, res Res) {
+			if string(pb.Properties.CorrelationData) != correlationID {
+				return
+			}
+			responses <- res
+		},
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	out := make(chan Res)
+	abort := make(chan struct{})
+
+	go func() {
+		// We buffer responses to avoid blocking the routeHandler above if our caller does not drain `out` fast enough.
+		// If our caller is ready to receive, then `buf` does not allocates any memory.
+		var buf []Res
+
+		for {
+			if len(buf) == 0 {
+				// Send or buffer
+				select {
+				case r := <-responses:
+					select {
+					// If our caller is ready and the buffer is empty, we can send the response directly without disturbing ordering
+					case out <- r:
+					default:
+						buf = append(buf, r)
+					}
+				case <-abort:
+					close(out)
+					return
+				}
+			} else {
+				// Drain or buffer
+				select {
+				case r := <-responses:
+					buf = append(buf, r)
+				case out <- buf[0]:
+					buf = buf[1:]
+				case <-abort:
+					close(out)
+					return
+				}
+			}
+		}
+	}()
+
+	cleanUp := func() {
+		deregister()
+		close(abort)
+	}
+
+	if err := r.publish(ctx, publishTopic, responseTopic.getPublishTopic(), []byte(correlationID), req); err != nil {
+		cleanUp()
+		return nil, nil, err
+	}
+
+	return out, cleanUp, nil
+}
+
+func (r *Router) Close() {
+	// TODO: Is there a way to clean up subscriptions without potentially removing overlapping subscriptions from a different router?
+	r.deregister()
+}
+
+func (r *Router) registerRouteHandler[N, M any](ctx context.Context, route TopicDef[N, M], rh func(*paho.Publish, N, M)) (func(), error) {
 	r.subsMu.Lock()
 	defer r.subsMu.Unlock()
 
@@ -60,36 +210,55 @@ func (r *Router) HandleSubscription[N, M any](ctx context.Context, route TopicDe
 			Subscriptions: []paho.SubscribeOptions{{Topic: topic}},
 		})
 		if err != nil {
-			return fmt.Errorf("subscribing to topic %s: %w", topic, err)
+			return nil, fmt.Errorf("subscribing to topic %s: %w", topic, err)
 		}
 
 		r.logger.Debug("subscribed_to_topic", "topic", topic)
 
 		r.subs[topic] = &subInfo{
 			routePath: route.getSubscribeSegments(),
-			handlers:  make([]func(*paho.Publish), 0),
+			handlers:  make(map[int64]func(*paho.Publish)),
 		}
 	}
 
-	r.subs[topic].handlers = append(r.subs[topic].handlers, r.newRouteHandler(route, h))
+	// This gives us a unique identifier for each registration
+	hid := r.subHandlerId.Add(1)
 
+	r.subs[topic].handlers[hid] = r.newRouteHandler(route, rh)
 	r.logger.Debug("subscription_handler_registered", "route", route)
 
-	return nil
-}
-
-func (r *Router) GetPublishHandle[N, M any](t TopicDef[N, M]) PublishHandle[M] {
-	return PublishHandle[M]{
-		cm:        r.cm,
-		marshalFn: r.marshal,
-		topic:     t.getPublishTopic(),
-		logger:    r.logger,
+	deregister := func() {
+		r.subsMu.Lock()
+		defer r.subsMu.Unlock()
+		delete(r.subs[topic].handlers, hid)
+		// TODO implement removal of subscription when there are no handlers
+		// Consider waiting for a quiescence period before removing to avoid thrashing the broker with SUBCRIBE/UNSUBSCRIBE packets
 	}
+
+	return deregister, nil
 }
 
-func (r *Router) Close() {
-	// TODO: Is there a way to clean up subscriptions without potentially removing overlapping subscriptions from a different router?
-	r.deregister()
+func (r *Router) publish[M any](ctx context.Context, topic string, responseTopic string, correlationData []byte, m M) error {
+	// TODO use an input struct instead of a bunch of optional parameters
+	payload, err := r.marshal(m)
+	if err != nil {
+		return fmt.Errorf("encoding payload for topic (%s): %w", topic, err)
+	}
+
+	_, err = r.cm.Publish(ctx, &paho.Publish{
+		Topic:   topic,
+		Payload: payload,
+		Properties: &paho.PublishProperties{
+			ResponseTopic:   responseTopic,
+			CorrelationData: correlationData,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("publishing message to topic (%s): %w", topic, err)
+	}
+	r.logger.Debug("published_to_topic", "topic", topic)
+
+	return nil
 }
 
 func (r *Router) onPublishReceived(pr autopaho.PublishReceived) (bool, error) {
@@ -111,52 +280,43 @@ func (r *Router) onPublishReceived(pr autopaho.PublishReceived) (bool, error) {
 	return false, nil
 }
 
-func (r *Router) newRouteHandler[N, M any](route TopicDef[N, M], h SubscriptionHandler[N, M]) func(*paho.Publish) {
+func (r *Router) newRouteHandler[Ns, Req any](route TopicDef[Ns, Req], h func(*paho.Publish, Ns, Req)) func(*paho.Publish) {
 	return func(pb *paho.Publish) {
 		topic := pb.Topic
 
-		var msg M
+		var msg Req
 		if err := r.unmarshal(pb.Payload, &msg); err != nil {
 			r.logger.Error("error_unmarshalling_message", "route", route.getSubscribeTopic(), "topic", topic)
 			return
 		}
 
-		ns := route.namespaceFromTopic(topic)
-		h(ns, msg)
+		ns := namespaceFromTopic[Ns](topic)
+		h(pb, ns, msg)
 	}
 }
 
 type subInfo struct {
 	routePath topicSegments
-	handlers  []func(*paho.Publish)
+	handlers  map[int64]func(*paho.Publish)
 }
 
 type SubscriptionHandler[Namespace, Message any] func(Namespace, Message)
 
 type PublishHandle[M any] struct {
-	cm        *autopaho.ConnectionManager
-	marshalFn func(any) ([]byte, error)
-	topic     string
-
-	logger *slog.Logger
+	router *Router
+	topic  string
 }
 
 func (p PublishHandle[M]) Publish(ctx context.Context, m M) error {
-	topic := p.topic
-
-	payload, err := p.marshalFn(m)
-	if err != nil {
-		return fmt.Errorf("encoding payload for topic (%s): %w", topic, err)
-	}
-
-	_, err = p.cm.Publish(ctx, &paho.Publish{
-		Topic:   topic,
-		Payload: payload,
-	})
-	if err != nil {
-		return fmt.Errorf("publishing message to topic (%s): %w", topic, err)
-	}
-	p.logger.Debug("published_to_topic", "topic", topic)
-
-	return nil
+	return p.router.publish(ctx, p.topic, "", nil, m)
 }
+
+type Endpoint[Namespace, Request, Response any] struct {
+	route TopicDef[Namespace, Request]
+}
+
+func (e Endpoint[Ns, Req, Res]) WithNamespace(n Ns) Endpoint[Ns, Req, Res] {
+	return Endpoint[Ns, Req, Res]{route: e.route.WithNamespace(n)}
+}
+
+type EndpointHandler[Ns, Req, Res any] func(Ns, Req) Res

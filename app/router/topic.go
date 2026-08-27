@@ -95,10 +95,9 @@ func (t TopicDef[N, M]) generateTopicSegments(emptyValuesAsWildcards bool) []str
 	return parts
 }
 
-func (t TopicDef[N, M]) namespaceFromTopic(topic string) N {
-	// copy value so as not to mutate original
-	nsv := t.namespace
-	ns := reflect.ValueOf(&nsv).Elem()
+func namespaceFromTopic[N any](topic string) N {
+	var nsValue N
+	ns := reflect.ValueOf(&nsValue).Elem()
 
 	parts := strings.Split(topic, "/")
 

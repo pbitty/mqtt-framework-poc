@@ -41,10 +41,13 @@ type (
 
 // Define a unique namespace for the device.  Fields names+values determine the unique topic for each device
 dev := Device{Region: "A", Zone: "B", ID: "1234"}
+
 // Define the topic for this specific Device
 topic := TemperatureTopic{}.WithNamespace(dev)
+
 // Get a publish handle that can be re-used.
 h := router.GetPublishHandle(topic)
+
 // Publish a message - the handle is typed based on the topic and will only accept `TemperatureMessage` as a parameter
 h.Publish(ctx, TemperatureMessage{TemperatureCelcius: 23.0})
 
@@ -60,6 +63,7 @@ router.HandleSubscription(ctx, TemperatureTopic{},
         // Handle message here
     },
 )
+
 // Subscribe to a subset of Devices by constraining some fields of the namespace
 router.HandleSubscription(ctx, TemperatureTopic{}.WithNamespace(Device{Region: "A"}),
     func(dev Device, msg TemperatureMessage) {
@@ -68,11 +72,84 @@ router.HandleSubscription(ctx, TemperatureTopic{}.WithNamespace(Device{Region: "
 )
 ```
 
-For more details see the [router](./app/router/doc.go) package.
+## Request/Response API
+
+We can create a typed mapping between topic+request+response using the `Endpoint` type.  Then we can register handlers using `router.HandleRequest()` and send requests using `router.SendRequest()` when a single response is expected and `router.SendBroadcastRequest()` when an arbitrary number of responses is expected.
+
+Here's an overview of the API by example:
+
+```go
+type (
+	// Define a namespace for each unique device, or a namespace that is shared by multiple devices
+	Device struct {
+		Section    string
+		SubSection string
+		DeviceId   string
+	}
+
+	// Define a request type that will be serialized/deserialized as the published message
+	MyRequest struct {
+		Value string
+	}
+
+	// Define a request type that will be serialized/deserialized as the message published to the response topic
+	MyResponse struct {
+		Value string
+	}
+
+	// Define the topic+request+responsem mapping - generics allow us to tell the system the types of each
+	MyEndpoint = router.Endpoint[Device, MyRequest, MyResponse]
+)
+
+//
+// Handle messages
+//
+
+// Define a namespace for the device, like in the Pub/Sub API, this determines the unique topic used for request/response
+dev := Device{Section: "A", SubSection: "B", DeviceId: "device-1"}
+
+// Define the topic used for request/response
+ep := MyEndpoint{}.WithNamespace(dev)
+
+// Register a handler for this specific topic
+r.HandleRequest(ctx, ep, func(_ Device, r MyRequest) MyResponse {
+	return MyResponse{
+		Value: "response for " + r.Value,
+	}
+})
+
+//
+// Send requests with a single response
+//
+
+// Send request to the same endpoint and receive a single response if it arrives before ctx is canceled
+res, err := r.SendRequest(ctx, ep, MyRequest{Value: "my request"})
+// handle response and error
+
+//
+// Send requests with arbitrary number f responses
+//
+
+// Send request to the same endpoint and receive a channel for iterating on the responses
+responses, close, err := r.SendBroadcastRequest(ctx, ep, MyRequest{Value: "my broadcast request"})
+// handle error
+
+// make sure the response channel gets closed 
+defer close() 
+
+// Iterater over the responses.  If the number of expected responses is known, limit the iterations
+for {
+	select {
+	case res := <-responses:
+		// handle response
+	case <-someTimeoutChannel:
+		// use a timeout to bound the amount of time we wait
+	}
+}
+```
 
 ## Future concerns to explore
 
-* Request/Response API (in development in https://github.com/pbitty/mqtt-framework-poc/pull/1)
 * Different encodings
 * Schema Versioning
 * Define topic/message schemas in Protobuf (or similar IDL) to enable multiple compatible clients in different languages
