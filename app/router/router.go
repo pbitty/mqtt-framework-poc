@@ -62,43 +62,6 @@ func (r *Router) HandleSubscription[N, M any](ctx context.Context, route TopicDe
 	return err
 }
 
-func (r *Router) registerRouteHandler[N, M any](ctx context.Context, route TopicDef[N, M], rh func(*paho.Publish, N, M)) (func(), error) {
-	r.subsMu.Lock()
-	defer r.subsMu.Unlock()
-
-	topic := route.getSubscribeTopic()
-
-	if _, ok := r.subs[topic]; !ok {
-		_, err := r.cm.Subscribe(ctx, &paho.Subscribe{
-			Subscriptions: []paho.SubscribeOptions{{Topic: topic}},
-		})
-		if err != nil {
-			return nil, fmt.Errorf("subscribing to topic %s: %w", topic, err)
-		}
-
-		r.logger.Debug("subscribed_to_topic", "topic", topic)
-
-		r.subs[topic] = &subInfo{
-			routePath: route.getSubscribeSegments(),
-			handlers:  make(map[int64]func(*paho.Publish)),
-		}
-	}
-
-	// This gives us a unique identifier for each registration
-	hid := r.subHandlerId.Add(1)
-
-	r.subs[topic].handlers[hid] = r.newRouteHandler(route, rh)
-	r.logger.Debug("subscription_handler_registered", "route", route)
-
-	deregister := func() {
-		r.subsMu.Lock()
-		defer r.subsMu.Unlock()
-		delete(r.subs[topic].handlers, hid)
-	}
-
-	return deregister, nil
-}
-
 func (r *Router) GetPublishHandle[N, M any](t TopicDef[N, M]) PublishHandle[M] {
 	return PublishHandle[M]{
 		router: r,
@@ -228,6 +191,43 @@ func (r *Router) SendBroadcastRequest[Ns, Req, Res any](
 func (r *Router) Close() {
 	// TODO: Is there a way to clean up subscriptions without potentially removing overlapping subscriptions from a different router?
 	r.deregister()
+}
+
+func (r *Router) registerRouteHandler[N, M any](ctx context.Context, route TopicDef[N, M], rh func(*paho.Publish, N, M)) (func(), error) {
+	r.subsMu.Lock()
+	defer r.subsMu.Unlock()
+
+	topic := route.getSubscribeTopic()
+
+	if _, ok := r.subs[topic]; !ok {
+		_, err := r.cm.Subscribe(ctx, &paho.Subscribe{
+			Subscriptions: []paho.SubscribeOptions{{Topic: topic}},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("subscribing to topic %s: %w", topic, err)
+		}
+
+		r.logger.Debug("subscribed_to_topic", "topic", topic)
+
+		r.subs[topic] = &subInfo{
+			routePath: route.getSubscribeSegments(),
+			handlers:  make(map[int64]func(*paho.Publish)),
+		}
+	}
+
+	// This gives us a unique identifier for each registration
+	hid := r.subHandlerId.Add(1)
+
+	r.subs[topic].handlers[hid] = r.newRouteHandler(route, rh)
+	r.logger.Debug("subscription_handler_registered", "route", route)
+
+	deregister := func() {
+		r.subsMu.Lock()
+		defer r.subsMu.Unlock()
+		delete(r.subs[topic].handlers, hid)
+	}
+
+	return deregister, nil
 }
 
 func (r *Router) publish[M any](ctx context.Context, topic string, responseTopic string, m M) error {
