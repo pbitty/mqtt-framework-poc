@@ -181,26 +181,32 @@ func (r *Router) SendBroadcastRequest[Ns, Req, Res any](
 		// If our caller is ready to receive, then `buf` does not allocates any memory.
 		var buf []Res
 
-		handleResponse := func(r Res) {
-			buf = append(buf, r)
-
-			for len(buf) > 0 {
+		for {
+			if len(buf) == 0 {
+				// Send or buffer
 				select {
-				case out <- buf[0]:
-					buf = buf[1:]
-				default:
+				case r := <-responses:
+					select {
+					// If our caller is ready and the buffer is empty, we can send the response directly without disturbing ordering
+					case out <- r:
+					default:
+						buf = append(buf, r)
+					}
+				case <-abort:
+					close(out)
 					return
 				}
-			}
-		}
-
-		for {
-			select {
-			case r := <-responses:
-				handleResponse(r)
-			case <-abort:
-				close(out)
-				return
+			} else {
+				// Drain or buffer
+				select {
+				case r := <-responses:
+					buf = append(buf, r)
+				case out <- buf[0]:
+					buf = buf[1:]
+				case <-abort:
+					close(out)
+					return
+				}
 			}
 		}
 	}()
