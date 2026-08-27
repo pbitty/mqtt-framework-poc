@@ -164,11 +164,11 @@ func (r *Router) SendBroadcastRequest[Ns, Req, Res any](
 	res := make(chan Res)
 	deregister, err := r.registerRouteHandler(ctx, responseTopic,
 		func(_ *paho.Publish, _ Ns, r Res) {
+			// TODO Handle race condition where `cleanUp()` can be called when we're trying to send on this channel
 			res <- r
 		},
 	)
 	if err != nil {
-		close(res)
 		return nil, nil, err
 	}
 
