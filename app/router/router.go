@@ -133,7 +133,6 @@ func (r *Router) SendBroadcastRequest[Ns, Req, Res any](
 
 	deregister, err := r.registerRouteHandler(ctx, responseTopic,
 		func(pb *paho.Publish, _ Ns, res Res) {
-			// TODO Handle CorrelationID here - skip response if it does not match our
 			if string(pb.Properties.CorrelationData) != correlationID {
 				return
 			}
@@ -187,7 +186,6 @@ func (r *Router) SendBroadcastRequest[Ns, Req, Res any](
 		close(abort)
 	}
 
-	// TODO Add correlation ID to request
 	if err := r.publish(ctx, publishTopic, responseTopic.getPublishTopic(), []byte(correlationID), req); err != nil {
 		cleanUp()
 		return nil, nil, err
