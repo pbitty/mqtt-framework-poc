@@ -161,28 +161,62 @@ func (r *Router) SendBroadcastRequest[Ns, Req, Res any](
 	publishTopic := e.route.getPublishTopic()
 	responseTopic := TopicDef[Ns, Res]{}.WithNamespace(e.route.namespace)
 
-	res := make(chan Res)
+	responses := make(chan Res)
+
 	deregister, err := r.registerRouteHandler(ctx, responseTopic,
-		func(_ *paho.Publish, _ Ns, r Res) {
-			// TODO Handle race condition where `cleanUp()` can be called when we're trying to send on this channel
-			res <- r
+		func(_ *paho.Publish, _ Ns, res Res) {
+			// TODO Handle CorrelationID here - skip response if it does not match our
+			responses <- res
 		},
 	)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	out := make(chan Res)
+	abort := make(chan struct{})
+
+	go func() {
+		// We buffer responses to avoid blocking the routeHandler above if our caller does not drain `out` fast enough.
+		// If our caller is ready to receive, then `buf` does not allocates any memory.
+		var buf []Res
+
+		handleResponse := func(r Res) {
+			buf = append(buf, r)
+
+			for len(buf) > 0 {
+				select {
+				case out <- buf[0]:
+					buf = buf[1:]
+				default:
+					return
+				}
+			}
+		}
+
+		for {
+			select {
+			case r := <-responses:
+				handleResponse(r)
+			case <-abort:
+				close(out)
+				return
+			}
+		}
+	}()
+
 	cleanUp := func() {
 		deregister()
-		close(res)
+		close(abort)
 	}
 
+	// TODO Add correlation ID to request
 	if err := r.publish(ctx, publishTopic, responseTopic.getPublishTopic(), req); err != nil {
 		cleanUp()
 		return nil, nil, err
 	}
 
-	return res, cleanUp, nil
+	return out, cleanUp, nil
 }
 
 func (r *Router) Close() {
