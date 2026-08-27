@@ -41,10 +41,13 @@ type (
 
 // Define a unique namespace for the device.  Fields names+values determine the unique topic for each device
 dev := Device{Region: "A", Zone: "B", ID: "1234"}
+
 // Define the topic for this specific Device
 topic := TemperatureTopic{}.WithNamespace(dev)
+
 // Get a publish handle that can be re-used.
 h := router.GetPublishHandle(topic)
+
 // Publish a message - the handle is typed based on the topic and will only accept `TemperatureMessage` as a parameter
 h.Publish(ctx, TemperatureMessage{TemperatureCelcius: 23.0})
 
@@ -60,6 +63,7 @@ router.HandleSubscription(ctx, TemperatureTopic{},
         // Handle message here
     },
 )
+
 // Subscribe to a subset of Devices by constraining some fields of the namespace
 router.HandleSubscription(ctx, TemperatureTopic{}.WithNamespace(Device{Region: "A"}),
     func(dev Device, msg TemperatureMessage) {
@@ -103,8 +107,10 @@ type (
 
 // Define a namespace for the device, like in the Pub/Sub API, this determines the unique topic used for request/response
 dev := Device{Section: "A", SubSection: "B", DeviceId: "device-1"}
+
 // Define the topic used for request/response
 ep := MyEndpoint{}.WithNamespace(dev)
+
 // Register a handler for this specific topic
 r.HandleRequest(ctx, ep, func(_ Device, r MyRequest) MyResponse {
 	return MyResponse{
@@ -127,8 +133,9 @@ res, err := r.SendRequest(ctx, ep, MyRequest{Value: "my request"})
 // Send request to the same endpoint and receive a channel for iterating on the responses
 responses, close, err := r.SendBroadcastRequest(ctx, ep, MyRequest{Value: "my broadcast request"})
 // handle error
-// make sure the response channel is closed
-defer close()
+
+// make sure the response channel gets closed 
+defer close() 
 
 // Iterater over the responses.  If the number of expected responses is known, limit the iterations
 for {
