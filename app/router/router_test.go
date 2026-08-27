@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -240,6 +241,67 @@ func (ts *RouterTestSuite) TestRequestResponseBroadcast() {
 			ts.FailNowf("timeout", "did not receive %d responses after %s", numMsgs, timeout)
 		}
 	}
+}
+
+func (ts *RouterTestSuite) TestRequestResponseBroadcastConcurrent() {
+	type MyNamespace struct {
+		Section    string
+		SubSection string
+		DeviceId   string
+	}
+
+	type MyRequest struct {
+		Value string
+	}
+
+	type MyResponse struct {
+		Value string
+	}
+
+	type MyEndpoint = router.Endpoint[MyNamespace, MyRequest, MyResponse]
+
+	var (
+		ctx                   = ts.T().Context()
+		router                = ts.router
+		ep                    = MyEndpoint{}.WithNamespace(MyNamespace{Section: "A", SubSection: "B", DeviceId: "device-1"})
+		numMsgs               = 100
+		numConcurrentRequests = 100
+	)
+
+	for range numMsgs {
+		// Register multiple handlers to simulate multiple devices responding
+		router.HandleRequest(ctx, ep, func(_ MyNamespace, r MyRequest) MyResponse {
+			return MyResponse{
+				Value: "response for " + r.Value,
+			}
+		})
+	}
+
+	var wg sync.WaitGroup
+
+	for n := range numConcurrentRequests {
+		wg.Go(func() {
+			value := "request " + strconv.Itoa(n)
+
+			responses, close, err := router.SendBroadcastRequest(ctx, ep, MyRequest{Value: value})
+			ts.Require().NoError(err)
+			defer close()
+
+			timeout := 10 * time.Second
+			expired := time.After(timeout)
+
+			for range numMsgs {
+				select {
+				case res := <-responses:
+					ts.Assert().Equal("response for "+value, res.Value)
+				case <-expired:
+					ts.FailNowf("timeout", "did not receive %d responses after %s", numMsgs, timeout)
+				}
+			}
+		})
+	}
+
+	wg.Wait()
 }
 
 func ExampleTopicDef() {

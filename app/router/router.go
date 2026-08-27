@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -87,7 +89,7 @@ func (r *Router) HandleRequest[Ns, Req, Res any](ctx context.Context, e Endpoint
 
 			res := h(n, req)
 
-			if err := r.publish(ctx, rt, "", res); err != nil {
+			if err := r.publish(ctx, rt, "", p.Properties.CorrelationData, res); err != nil {
 				logger.Error("publishing_response", "response_topic", rt)
 			}
 		},
@@ -126,9 +128,15 @@ func (r *Router) SendBroadcastRequest[Ns, Req, Res any](
 
 	responses := make(chan Res)
 
+	// TODO Find a more robust way to generate random bytes
+	correlationID := strconv.Itoa(int(rand.Int32()))
+
 	deregister, err := r.registerRouteHandler(ctx, responseTopic,
-		func(_ *paho.Publish, _ Ns, res Res) {
+		func(pb *paho.Publish, _ Ns, res Res) {
 			// TODO Handle CorrelationID here - skip response if it does not match our
+			if string(pb.Properties.CorrelationData) != correlationID {
+				return
+			}
 			responses <- res
 		},
 	)
@@ -180,7 +188,7 @@ func (r *Router) SendBroadcastRequest[Ns, Req, Res any](
 	}
 
 	// TODO Add correlation ID to request
-	if err := r.publish(ctx, publishTopic, responseTopic.getPublishTopic(), req); err != nil {
+	if err := r.publish(ctx, publishTopic, responseTopic.getPublishTopic(), []byte(correlationID), req); err != nil {
 		cleanUp()
 		return nil, nil, err
 	}
@@ -232,7 +240,8 @@ func (r *Router) registerRouteHandler[N, M any](ctx context.Context, route Topic
 	return deregister, nil
 }
 
-func (r *Router) publish[M any](ctx context.Context, topic string, responseTopic string, m M) error {
+func (r *Router) publish[M any](ctx context.Context, topic string, responseTopic string, correlationData []byte, m M) error {
+	// TODO use an input struct instead of a bunch of optional parameters
 	payload, err := r.marshal(m)
 	if err != nil {
 		return fmt.Errorf("encoding payload for topic (%s): %w", topic, err)
@@ -242,7 +251,8 @@ func (r *Router) publish[M any](ctx context.Context, topic string, responseTopic
 		Topic:   topic,
 		Payload: payload,
 		Properties: &paho.PublishProperties{
-			ResponseTopic: responseTopic,
+			ResponseTopic:   responseTopic,
+			CorrelationData: correlationData,
 		},
 	})
 	if err != nil {
@@ -300,7 +310,7 @@ type PublishHandle[M any] struct {
 }
 
 func (p PublishHandle[M]) Publish(ctx context.Context, m M) error {
-	return p.router.publish(ctx, p.topic, "", m)
+	return p.router.publish(ctx, p.topic, "", nil, m)
 }
 
 type Endpoint[Namespace, Request, Response any] struct {
