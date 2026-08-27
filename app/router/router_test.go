@@ -23,7 +23,7 @@ import (
 
 type RouterTestSuite struct {
 	suite.Suite
-	cm     *autopaho.ConnectionManager
+	router *router.Router
 	logger *slog.Logger
 }
 
@@ -62,6 +62,7 @@ func (ts *RouterTestSuite) SetupTest() {
 		KeepAlive:                     5,
 		CleanStartOnInitialConnection: true,
 		OnConnectError:                func(err error) { ts.T().Log("connection_error: ", err) },
+		ConnectTimeout:                5 * time.Second,
 		ClientConfig: paho.ClientConfig{
 			ClientID:           clientId,
 			Session:            state.NewInMemory(),
@@ -78,8 +79,12 @@ func (ts *RouterTestSuite) SetupTest() {
 	err = cm.AwaitConnection(ctx)
 	ts.Require().NoError(err, "error starting connection to MQTT broker")
 
-	ts.cm = cm
 	ts.logger = logger
+
+	lc := fxtest.NewLifecycle(ts.T())
+	ts.router = router.NewRouter(cm, ts.logger, lc)
+
+	lc.RequireStart()
 }
 
 func (ts *RouterTestSuite) TestPublishAndSubscribe() {
@@ -102,8 +107,7 @@ func (ts *RouterTestSuite) TestPublishAndSubscribe() {
 
 	var (
 		ctx = ts.T().Context()
-		lc  = fxtest.NewLifecycle(ts.T())
-		r   = router.NewRouter(ts.cm, ts.logger, lc)
+		r   = ts.router
 
 		t1 = MyTopic{}.WithNamespace(MyNamespace{Section: "A", SubSection: "B", DeviceId: "device-1"})
 		t2 = MyTopic{}.WithNamespace(MyNamespace{Section: "A"})
@@ -116,8 +120,6 @@ func (ts *RouterTestSuite) TestPublishAndSubscribe() {
 		timeout = 5 * time.Second
 		tick    = 100 * time.Millisecond
 	)
-
-	lc.RequireStart()
 
 	r.HandleSubscription(ctx, t1, func(n MyNamespace, m MyMessage) { result1.Store(result{n, m}) })
 	r.HandleSubscription(ctx, t2, func(n MyNamespace, m MyMessage) { result2.Store(result{n, m}) })
@@ -153,6 +155,46 @@ func (ts *RouterTestSuite) TestPublishAndSubscribe() {
 			"no message received on topic %+v", t3,
 		)
 	}, timeout, tick)
+}
+
+func (ts *RouterTestSuite) TestRequestResponse() {
+	type MyNamespace struct {
+		Section    string
+		SubSection string
+		DeviceId   string
+	}
+
+	type MyRequest struct {
+		Value string
+	}
+
+	type MyResponse struct {
+		Value string
+	}
+
+	type MyEndpoint = router.Endpoint[MyNamespace, MyRequest, MyResponse]
+
+	type result struct {
+		n MyNamespace
+		m MyRequest
+	}
+
+	var (
+		ctx = ts.T().Context()
+		r   = ts.router
+		e   = MyEndpoint{}.WithNamespace(MyNamespace{Section: "A", SubSection: "B", DeviceId: "device-1"})
+	)
+
+	r.HandleRequest(ctx, e, func(_ MyNamespace, r MyRequest) MyResponse {
+		return MyResponse{
+			Value: "response for " + r.Value,
+		}
+	})
+
+	res, err := r.SendRequest(ctx, e, MyRequest{Value: "request 1"})
+	ts.Require().NoError(err)
+
+	ts.Assert().Equal("response for request 1", res.Value)
 }
 
 func ExampleTopicDef() {

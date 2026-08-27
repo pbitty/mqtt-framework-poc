@@ -12,3 +12,8 @@ tasks:
 
   run-devices:
     docker compose up device-1 device-2 device-3
+
+  test:
+    cmds:
+      - docker compose up --detach --wait mosquitto
+      - cd app && go test -v ./...
