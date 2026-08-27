@@ -72,7 +72,7 @@ For more details see the [router](./app/router/doc.go) package.
 
 ## Future concerns to explore
 
-* Request/Response API
+* Request/Response API (in development in https://github.com/pbitty/mqtt-framework-poc/pull/1)
 * Different encodings
 * Schema Versioning
 * Define topic/message schemas in Protobuf (or similar IDL) to enable multiple compatible clients in different languages
