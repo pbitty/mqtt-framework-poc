@@ -225,6 +225,8 @@ func (r *Router) registerRouteHandler[N, M any](ctx context.Context, route Topic
 		r.subsMu.Lock()
 		defer r.subsMu.Unlock()
 		delete(r.subs[topic].handlers, hid)
+		// TODO implement removal of subscription when there are no handlers
+		// Consider waiting for a quiescence period before removing to avoid thrashing the broker with SUBCRIBE/UNSUBSCRIBE packets
 	}
 
 	return deregister, nil
