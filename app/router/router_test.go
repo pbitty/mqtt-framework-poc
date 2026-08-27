@@ -38,7 +38,7 @@ func TestRouterTestSuite(t *testing.T) {
 func (ts *RouterTestSuite) SetupTest() {
 	logger := slog.New(slog.NewTextHandler(ts.T().Output(), &slog.HandlerOptions{
 		AddSource: true,
-		Level:     slog.LevelDebug,
+		Level:     slog.LevelInfo,
 	}))
 
 	clientId := ts.T().Name() +
@@ -174,27 +174,72 @@ func (ts *RouterTestSuite) TestRequestResponse() {
 
 	type MyEndpoint = router.Endpoint[MyNamespace, MyRequest, MyResponse]
 
-	type result struct {
-		n MyNamespace
-		m MyRequest
-	}
-
 	var (
-		ctx = ts.T().Context()
-		r   = ts.router
-		e   = MyEndpoint{}.WithNamespace(MyNamespace{Section: "A", SubSection: "B", DeviceId: "device-1"})
+		ctx    = ts.T().Context()
+		router = ts.router
+		ep     = MyEndpoint{}.WithNamespace(MyNamespace{Section: "A", SubSection: "B", DeviceId: "device-1"})
 	)
 
-	r.HandleRequest(ctx, e, func(_ MyNamespace, r MyRequest) MyResponse {
+	router.HandleRequest(ctx, ep, func(_ MyNamespace, r MyRequest) MyResponse {
 		return MyResponse{
 			Value: "response for " + r.Value,
 		}
 	})
 
-	res, err := r.SendRequest(ctx, e, MyRequest{Value: "request 1"})
+	res, err := router.SendRequest(ctx, ep, MyRequest{Value: "request 1"})
 	ts.Require().NoError(err)
 
 	ts.Assert().Equal("response for request 1", res.Value)
+}
+
+func (ts *RouterTestSuite) TestRequestResponseBroadcast() {
+	type MyNamespace struct {
+		Section    string
+		SubSection string
+		DeviceId   string
+	}
+
+	type MyRequest struct {
+		Value string
+	}
+
+	type MyResponse struct {
+		Value string
+	}
+
+	type MyEndpoint = router.Endpoint[MyNamespace, MyRequest, MyResponse]
+
+	var (
+		ctx     = ts.T().Context()
+		router  = ts.router
+		ep      = MyEndpoint{}.WithNamespace(MyNamespace{Section: "A", SubSection: "B", DeviceId: "device-1"})
+		numMsgs = 100
+	)
+
+	for range numMsgs {
+		// Register multiple handlers to simulate multiple devices responding
+		router.HandleRequest(ctx, ep, func(_ MyNamespace, r MyRequest) MyResponse {
+			return MyResponse{
+				Value: "response for " + r.Value,
+			}
+		})
+	}
+
+	responses, close, err := router.SendBroadcastRequest(ctx, ep, MyRequest{Value: "request 1"})
+	ts.Require().NoError(err)
+	defer close()
+
+	timeout := 10 * time.Second
+	expired := time.After(timeout)
+
+	for range numMsgs {
+		select {
+		case res := <-responses:
+			ts.Assert().Equal("response for request 1", res.Value)
+		case <-expired:
+			ts.FailNowf("timeout", "did not receive %d responses after %s", numMsgs, timeout)
+		}
+	}
 }
 
 func ExampleTopicDef() {
